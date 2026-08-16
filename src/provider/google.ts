@@ -6,7 +6,7 @@ import type {
 
 /** Google Gemini adapter.
  *
- *  Two things here are unlike the other two adapters and are the reason this
+ *  Three things here are unlike the other two adapters and are the reason this
  *  file exists rather than being folded into one of them:
  *
  *  1. USAGE ARITHMETIC (see normaliseUsage). Gemini is a THIRD distinct shape.
@@ -14,15 +14,28 @@ import type {
  *     on the Gemini Developer API `candidatesTokenCount` already INCLUDES the
  *     thinking tokens, while on Vertex it does not. That contradicts the SDK's
  *     own doc comment on `totalTokenCount`, which sums thoughts SEPARATELY from
- *     candidates. It cannot be settled offline and there is no GEMINI_API_KEY
- *     here, so instead of guessing, `usageArithmeticHolds` re-derives the
- *     documented identity from every real response and normaliseUsage warns ONCE
- *     if it ever fails. That turns a silent 2x output-token overcount into a
- *     loud line on the first live call.
+ *     candidates. No offline evidence settles it, so instead of guessing,
+ *     `usageArithmeticHolds` re-derives the documented identity from every real
+ *     response and normaliseUsage warns ONCE if it ever fails. That turns a
+ *     silent 2x output-token overcount into a loud line on the first live call.
+ *
+ *     STILL UNANSWERED, and this comment is the record that it is. One live
+ *     generateContent with thinking on decides it outright: send any prompt,
+ *     read usageMetadata, and see whether `usageArithmeticHolds` is true of it.
+ *     Nothing in this repo's gate makes that call and no run of it is recorded
+ *     anywhere here. Whoever makes it writes the answer HERE. If it comes back
+ *     "candidates INCLUDES thoughts", delete the `+ thoughts` in normaliseUsage
+ *     and flip the outputTokens assertion in google.test.ts — until then the `+`
+ *     follows the SDK's own documented identity, the only evidence that exists.
  *
  *  2. SELF-THROTTLING (see throttle/withRetry). The free tier is ~10 RPM for
  *     2.5 Flash — below what a single worker generates — so the adapter paces
  *     itself instead of relying on the runner's concurrency setting.
+ *
+ *  3. A REASONING BUDGET THAT CAN EAT ITS OWN TURN (see thinkingBudgetFor).
+ *     Neither other vendor exposes a thinking allowance that can be set larger
+ *     than the turn's own output cap; Gemini does, and the runner's cap is
+ *     smaller than `high`'s nominal budget, so it must be clamped.
  */
 
 // Lazy: importing this module must not require GEMINI_API_KEY.
@@ -222,6 +235,22 @@ const THINKING_BUDGET: Record<Effort, number> = {
   low: 1024, medium: 4096, high: 16384, xhigh: 24576,
 };
 
+/** …but the budget is spent OUT OF maxOutputTokens — this adapter's own
+ *  accounting says so, since normaliseUsage folds thoughts into outputTokens.
+ *  A budget at or above the turn's cap lets the model think the whole turn away
+ *  and return MAX_TOKENS with no text and no functionCall; mapStop says
+ *  "max_tokens", the loop abandons the run, and the fixture scores as a failure
+ *  the model never got to attempt — a silent, systematic hit to the pass rate,
+ *  which is the headline metric. The runner's cap is 16000 and `high` asks
+ *  16384, so this bites the shipped Gemini variants. Half the cap is the
+ *  reserve: write_file replays an ENTIRE file, so the answer needs real room.
+ *  Ceiling: under a cap this small, high and xhigh clamp to the same number —
+ *  raise maxTokensPerTurn if those two arms ever have to be told apart.
+ *  Neither other adapter needs this; neither exposes a reasoning budget that
+ *  can exceed its own output cap. */
+export const thinkingBudgetFor = (effort: Effort, maxOutputTokens: number): number =>
+  Math.min(THINKING_BUDGET[effort], Math.floor(maxOutputTokens / 2));
+
 class GoogleSession implements Session {
   /** Private, native. The loop never sees this (TSD §2.2). */
   private contents: any[];
@@ -242,7 +271,10 @@ class GoogleSession implements Session {
         systemInstruction: this.cfg.systemPrompt,
         tools: mapTools(this.cfg.tools),
         maxOutputTokens: this.cfg.maxTokensPerTurn,
-        thinkingConfig: { thinkingBudget: THINKING_BUDGET[this.cfg.effort], includeThoughts: false },
+        thinkingConfig: {
+          thinkingBudget: thinkingBudgetFor(this.cfg.effort, this.cfg.maxTokensPerTurn),
+          includeThoughts: false,
+        },
       },
     })) as Res;
 
@@ -268,12 +300,13 @@ export const googleProvider: Provider = {
   id: "google" as unknown as ProviderId,
   start: (cfg, task) => new GoogleSession(cfg, task),
   async complete(cfg, prompt, schema) {
+    const maxOutputTokens = 2000;
     const res = await withRetry("complete", () => client().models.generateContent({
       model: cfg.model,
       contents: [{ role: "user", parts: [{ text: prompt }] }],
       config: {
-        maxOutputTokens: 2000,
-        thinkingConfig: { thinkingBudget: THINKING_BUDGET.low, includeThoughts: false },
+        maxOutputTokens,
+        thinkingConfig: { thinkingBudget: thinkingBudgetFor("low", maxOutputTokens), includeThoughts: false },
         responseMimeType: "application/json",
         responseSchema: schema as any,
       },

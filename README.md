@@ -4,12 +4,13 @@ Measures whether a coding agent actually fixed the bug — and whether it was ho
 
 ## Status
 
-No measurement sweep has been run: this repo has no `OPENAI_API_KEY` (and no
-`ANTHROPIC_API_KEY`, and no `GEMINI_API_KEY`) available, and every code path that would spend money is written
-so it throws rather than silently defaulting — `costUsd` throws on an unpriced model,
-`requireKey` throws before the first API call, the cache assertion aborts a sweep rather
-than reporting cost numbers it can't trust. There is no `eval.db`, no `report.html`, and
+No measurement sweep has been recorded here: there is no `eval.db`, no `report.html`, and
 no headline number in this README, because inventing one would be worse than having none.
+Every code path that would spend money is written so it throws rather than silently
+defaulting — `costUsd` throws on an unpriced model, `requireKey` throws before the first
+API call, the cache assertion aborts a sweep rather than reporting cost numbers it can't
+trust. Keys, where they exist at all, live in a gitignored `.env.local`; none of the five
+gate commands reads one, and none is checked in.
 
 What *is* verified, end-to-end, with zero API calls:
 
@@ -62,14 +63,23 @@ That is the argument for building a harness instead of a script.
 Three adapters ship behind the same two-method interface (`start` → `step`, plus
 `prewarm`), all unit-tested:
 
-| Adapter | API | Exercised live? |
+| Adapter | API | Live traffic behind anything checked in? |
 |---|---|---|
-| `src/provider/openai.ts` | Responses | **No.** No `OPENAI_API_KEY` in this environment. |
-| `src/provider/anthropic.ts` | Messages | **No.** No `ANTHROPIC_API_KEY`. |
-| `src/provider/google.ts` | `generateContent` | **No.** No `GEMINI_API_KEY`. |
+| `src/provider/openai.ts` | Responses | **No** — the unit tests mock the SDK; `recorded/openai-turn2.json` is hand-written. |
+| `src/provider/anthropic.ts` | Messages | **No** — same, for `recorded/anthropic-turn2.json`. |
+| `src/provider/google.ts` | `generateContent` | **No** — its responses are inline in the tests. |
 
-**None of the three has ever made a live API call from this repo.** Everything below is
-what the offline tests establish, and nothing more.
+**No artifact in this repo — test, fixture, number or sentence — is derived from a live API
+call.** That is a claim about what is checked in, and it is checkable: every response the
+tests see comes from a mocked SDK, and the five gate commands make no network call. It is
+deliberately *not* a claim about what anyone has ever run at a shell with a key of their own,
+which this file has no way to attest to. Everything below is what the offline tests establish,
+and nothing more.
+
+One live call is still *owed*, and `src/provider/google.ts` says so in its header: the disputed
+`candidatesTokenCount` question (TSD §5.3) is settled outright by a single `generateContent`
+with thinking on. Its answer is recorded nowhere in this repo, which means it is unanswered
+here. Whoever makes that call writes the verdict into that header.
 
 The recorded response fixtures — `recorded/openai-turn2.json` and
 `recorded/anthropic-turn2.json` — are hand-written, not live captures, because no API key

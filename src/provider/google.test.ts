@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  buildToolResultContent, extractToolCalls, mapStop, mapTools, normaliseUsage, usageArithmeticHolds,
+  buildToolResultContent, extractToolCalls, mapStop, mapTools, normaliseUsage,
+  thinkingBudgetFor, usageArithmeticHolds,
 } from "./google.js";
 import { ALL_TOOLS } from "../tools.js";
 
@@ -152,6 +153,40 @@ describe("buildToolResultContent", () => {
     const parts = buildToolResultContent(calls.map(c => ({ id: c.id, content: "x" }))).parts;
     // Two parallel calls to the SAME tool must both resolve back to that name.
     expect(parts.map(p => p.functionResponse.name)).toEqual(["read_file", "read_file"]);
+  });
+});
+
+describe("thinkingBudgetFor", () => {
+  // The runner's real cap (runner.ts) — the number these budgets have to survive.
+  const CAP = 16000;
+
+  it("never asks to think for more than half the turn's output cap", () => {
+    // Unclamped, `high` is 16384: MORE than the whole turn. The model would
+    // spend the output budget thinking, come back MAX_TOKENS with no text and
+    // no functionCall, and the fixture would score as a failure it never
+    // attempted. Every level must leave room for the answer.
+    for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+      expect(thinkingBudgetFor(effort, CAP)).toBeLessThanOrEqual(CAP / 2);
+    }
+    expect(thinkingBudgetFor("high", CAP)).toBe(8000);
+    expect(thinkingBudgetFor("xhigh", CAP)).toBe(8000);
+  });
+
+  it("leaves the levels that already fit exactly where the ladder puts them", () => {
+    expect(thinkingBudgetFor("low", CAP)).toBe(1024);
+    expect(thinkingBudgetFor("medium", CAP)).toBe(4096);
+  });
+
+  it("clamps against the SMALLER cap complete() uses, not just the session's", () => {
+    expect(thinkingBudgetFor("low", 2000)).toBe(1000);
+  });
+
+  it("is never 0 at either cap the adapter uses — 0 is thinking DISABLED, not an effort level", () => {
+    for (const cap of [CAP, 2000]) {
+      for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+        expect(thinkingBudgetFor(effort, cap)).toBeGreaterThan(0);
+      }
+    }
   });
 });
 
