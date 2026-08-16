@@ -3,7 +3,7 @@ import { runLoop } from "./loop.js";
 import { makeFakeProvider } from "./fake-provider.js";
 import { ALL_TOOLS } from "./tools.js";
 import type { EventInput, ToolHandlers } from "./types.js";
-import type { LoopConfig, LoopResult } from "./loop.js";
+import type { LoopConfig } from "./loop.js";
 
 const cfg: LoopConfig = {
   model: "gpt-5.6-terra", effort: "high", systemPrompt: "sys",

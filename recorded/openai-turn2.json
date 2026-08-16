@@ -1,5 +1,5 @@
 {
-  "_comment": "Hand-written, not a live capture — OPENAI_API_KEY is unset in this environment so `npm run record` could not be run. This is a faithful reconstruction of a real OpenAI Responses API turn-2 payload shape (gpt-5-nano) and must be replaced by a real capture (`npm run record`) once a key is available.",
+  "_comment": "Hand-written, not a live capture — OPENAI_API_KEY is unset in this environment so `npm run record` could not be run. This is a faithful reconstruction of a real OpenAI Responses API turn-2 payload shape (gpt-5-nano, effort low) and must be replaced by a real capture (`npm run record`) once a key is available. usage.input_tokens_details.cached_tokens is deliberately NON-ZERO and internally consistent (input_tokens INCLUDES it; total_tokens = input_tokens + output_tokens; cached_tokens is a multiple of 128 and the prompt clears the 1024-token cache floor) so that the regression test in src/provider/openai.test.ts is load-bearing: with cached_tokens 0 the assertion inputTokens + cacheReadTokens === input_tokens held whether the cached subtraction was present, missing, doubled or inverted. Keep it non-zero when replacing this file.",
   "id": "resp_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c5",
   "object": "response",
   "created_at": 1755331200,
@@ -38,11 +38,11 @@
   "top_p": 1,
   "truncation": "disabled",
   "usage": {
-    "input_tokens": 612,
-    "input_tokens_details": { "cached_tokens": 0 },
-    "output_tokens": 34,
-    "output_tokens_details": { "reasoning_tokens": 0 },
-    "total_tokens": 646
+    "input_tokens": 1408,
+    "input_tokens_details": { "cached_tokens": 1024 },
+    "output_tokens": 143,
+    "output_tokens_details": { "reasoning_tokens": 128 },
+    "total_tokens": 1551
   },
   "user": null,
   "metadata": {}

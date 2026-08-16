@@ -68,15 +68,24 @@ function buildSystem(prompt: string) {
   return [{ type: "text" as const, text: prompt, cache_control: { type: "ephemeral" as const } }];
 }
 
-/** Breakpoints 2 and 3 of TSD §6.1: one ~15 blocks back to defeat the 20-block
- *  lookback window, one on the most recent block. */
+/** Breakpoints 2 and 3 of TSD §6.1. What this actually does: marks the LAST
+ *  content block of the last message, and — when there are at least 4 messages —
+ *  the last content block of the 4th-from-last MESSAGE. Messages, not blocks:
+ *  four messages is roughly two agent turns back, which is the older-prefix
+ *  breakpoint. It is not a 15-block offset and makes no claim about the API's
+ *  20-block lookback window.
+ *
+ *  A thinking block can never carry cache_control (the Messages API rejects it),
+ *  so a target that lands on one is skipped rather than marked. */
 function withCacheBreakpoints(messages: any[]): any[] {
   const out = messages.map(m => ({ ...m, content: Array.isArray(m.content) ? [...m.content] : m.content }));
   const mark = (i: number) => {
     const m = out[i];
     if (!m || !Array.isArray(m.content) || m.content.length === 0) return;
     const last = m.content.length - 1;
-    m.content[last] = { ...m.content[last], cache_control: { type: "ephemeral" } };
+    const target = m.content[last];
+    if (target?.type === "thinking" || target?.type === "redacted_thinking") return;
+    m.content[last] = { ...target, cache_control: { type: "ephemeral" } };
   };
   mark(out.length - 1);
   if (out.length >= 4) mark(out.length - 4);
@@ -97,6 +106,12 @@ class AnthropicSession implements Session {
     const res = await client().messages.create({
       model: this.cfg.model,
       max_tokens: this.cfg.maxTokensPerTurn,
+      // UNVERIFIED. `output_config` is NOT in @anthropic-ai/sdk@0.70's MessageCreateParams;
+      // it only compiles because the whole object is cast `as any` below, so TypeScript
+      // never checks it and no offline test can either. The plan mandates this shape, and
+      // it cannot be settled without a live call — ANTHROPIC_API_KEY is unset here.
+      // FIRST THING TO CHECK the day a key appears: if the API 400s on an unknown field,
+      // this (and the two identical lines in complete/prewarm) is why.
       output_config: { effort: this.cfg.effort },
       system: buildSystem(this.cfg.systemPrompt),
       tools: mapTools(this.cfg.tools),
@@ -131,7 +146,7 @@ export const anthropicProvider: Provider = {
   async prewarm(cfg) {
     const res = await client().messages.create({
       model: cfg.model,
-      max_tokens: 0,
+      max_tokens: 1,          // the Messages API requires >= 1; 0 is a 400 on the FIRST call of a sweep
       thinking: { type: "disabled" },
       output_config: { effort: "low" },
       system: buildSystem(cfg.systemPrompt),
