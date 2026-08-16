@@ -14,13 +14,25 @@ const { values } = parseArgs({
   },
 });
 
+/** `--reps abc` is NaN and `--concurrency 0` makes pool() do nothing: both would
+ *  otherwise produce a sweep that runs no cells and exits 0, which reads as a
+ *  successful measurement. */
+function positiveInt(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isInteger(n) || n < 1) {
+    console.error(`--${flag} must be a positive integer, got: ${raw}`);
+    process.exit(2);
+  }
+  return n;
+}
+
 await runSweep({
   variants: values.variant!,
-  reps: Number(values.reps),
+  reps: positiveInt("reps", values.reps!),
   tasks: values.tasks,
-  concurrency: Number(values.concurrency),
+  concurrency: positiveInt("concurrency", values.concurrency!),
   keepTemp: values["keep-temp"]!,
   db: values.db!,
-  maxSteps: Number(values["max-steps"]),
+  maxSteps: positiveInt("max-steps", values["max-steps"]!),
   judge: values.judge!,
 });

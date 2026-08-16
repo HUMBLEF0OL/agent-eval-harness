@@ -19,8 +19,15 @@ What *is* verified, end-to-end, with zero API calls:
 Both are green right now (`npx vitest run`, `npx tsc --noEmit`, and `npm run check-leaks`
 are too). The moment a key exists, the finding is one command away:
 
+    # PowerShell (the platform this harness was built and tested on)
+    $env:OPENAI_API_KEY="..."
+    npm run sweep -- --variant baseline --variant no-run-tests `
+      --variant effort-medium --variant effort-low --reps 3
+
+    # bash / zsh
     OPENAI_API_KEY=... npm run sweep -- --variant baseline --variant no-run-tests \
       --variant effort-medium --variant effort-low --reps 3
+
     npm run report -- ./eval.db ./report.html
 
 That produces `report.html` — pass rate with a bootstrap 95% CI, tamper rate, cost, and
@@ -53,8 +60,12 @@ That is the argument for building a harness instead of a script.
 
 Both OpenAI (Responses API) and Anthropic (Messages API) adapters ship and are unit-tested.
 Neither has been exercised against a live key in this environment — no key exists here.
-The Anthropic adapter's token normalisation is verified against a hand-written response
-fixture, not a live capture; that is disclosed in `recorded/anthropic-turn2.json`.
+**Both** recorded response fixtures — `recorded/openai-turn2.json` and
+`recorded/anthropic-turn2.json` — are hand-written, not live captures, because neither
+API key was available; each says so in its own `_comment`. They are faithful to the
+documented payload shapes and the normalisation tests assert against them, but replacing
+them with real captures (`npm run record` for OpenAI) is the first thing to do once a key
+exists.
 
 ## Reproduce
 
@@ -62,7 +73,12 @@ fixture, not a live capture; that is disclosed in `recorded/anthropic-turn2.json
     npm run demo             # zero API calls, zero tokens — proves the harness works
     npm run verify-fixtures  # every fixture fails before, passes after
     npm test                 # unit suite
+
+    # then, with a key — PowerShell:
+    $env:OPENAI_API_KEY="..."; npm run sweep -- --variant baseline --reps 3
+    # bash / zsh:
     OPENAI_API_KEY=... npm run sweep -- --variant baseline --reps 3
+
     npm run report
 
 ## Design notes

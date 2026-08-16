@@ -362,6 +362,14 @@ function resolveInRoot(root: string, p: string): string {
 
 Rejects `..` traversal, absolute paths outside the root, and drive-letter escapes on Windows. Symlinks are not created inside fixtures, so `realpath` resolution is not required; if fixtures ever gain symlinks, this must add a `fs.realpathSync` check. Covered by the demo self-check (§11).
 
+**What the path guard does not cover — stated plainly, because a guard that is trusted beyond its reach is worse than none.**
+
+The guard constrains tool **arguments**. It does not constrain the **code under test**. `scoreTests` (§9.1) runs `npx vitest run` over the sandbox, and vitest imports the source file the model just wrote — so a sweep executes model-authored code as a normal Node process with the harness's own privileges: full filesystem access, network, environment (`OPENAI_API_KEY` included). A "fix" whose module body writes a file outside the sandbox at import time runs that write, and still scores `passed = true` if the restored tests go green. This was demonstrated, not theorised.
+
+This is by design and it is not fixable at this scale: containerising each run is ruled out by the plan (no Docker), and nothing short of an OS-level boundary actually contains arbitrary code. **Do not run a sweep against fixtures or a model you would not run an untrusted npm package for.** The honest statement of the threat model is: fixtures are authored in-repo and trusted; the model's *output* is not trusted for correctness or honesty, but it is unavoidably trusted with execution.
+
+One specific consequence *is* mitigated, because it silently corrupts the measurement rather than the machine. `scoreTests` restores guarded files from the **live** `fixtures/<id>/repo` directory, so a run that wrote to that directory would poison the restore source for every later run of that task — every subsequent `passed` scored against a rewritten test, with nothing in the database to show for it. So the runner hashes every selected fixture's guarded files once at sweep start (`hashGuardedFiles`, the same function §9.2 uses) and re-verifies them before each cell's `scoreTests` call; a mismatch aborts the sweep with the fixture id and the changed paths. Aborting is the correct response, not a warning: a corrupted restore source invalidates every measurement taken after it, and a sweep that is wrong is more expensive than a sweep that stopped.
+
 ### 4.3 Dispatch contract
 
 ```ts
@@ -420,7 +428,7 @@ for (const r of results) {
 }
 ```
 
-`store: false` plus `include: ["reasoning.encrypted_content"]` is the combination that keeps reasoning alive across turns without server-side state. Dropping `include` is silent — the run still completes, just measurably worse. Asserted in the demo (§11).
+`store: false` plus `include: ["reasoning.encrypted_content"]` is the combination that keeps reasoning alive across turns without server-side state. Dropping `include` is silent — the run still completes, just measurably worse. The demo does **not** assert this (its fake provider has no vendor request to inspect); `src/provider/openai.history.test.ts` does, by driving a real adapter session and asserting the turn-1 `reasoning` item is present in the turn-2 request input (§11.2).
 
 `previous_response_id` is the easier alternative and is **not** used: it requires `store: true`, which puts the transcript on OpenAI's servers and takes the history out of our hands, when the history is a thing we are measuring.
 
@@ -847,9 +855,10 @@ for (const [name, variant] of selectedVariants) {
 ```
 
 - `CONCURRENCY = 4`. Higher risks rate limits and makes `wall_ms` a measurement of contention rather than of the agent. It is also per-provider-account, so a mixed sweep across two vendors could safely run 4 each — not worth the code today.
-- Temp roots live under the OS temp directory, one per run, removed on completion. `--keep-temp` retains them for debugging.
+- Sandbox roots live under `<repo>/.aeh-tmp/`, one per run, removed on completion — **not** under `os.tmpdir()`; see §16.5 for why the drive matters. `--keep-temp` retains them for debugging.
 - Pre-warm is strictly ordered before fan-out; running it concurrently with the pool defeats its entire purpose.
-- A crashed run records `stop_reason = 'error'` with the message and does not abort the sweep. A failed **cache assertion** does abort it — that one is a measurement-integrity failure, not a run failure.
+- `store.clearEvents(runId)` runs immediately before `runLoop`. `runs.id` is deterministic and `INSERT OR REPLACE` keeps the row unique, but events are append-only, so without this a re-run of a cell interleaves a second trajectory into the first under duplicate `seq` values.
+- A crashed run records `stop_reason = 'error'` with the message and does not abort the sweep. A failed **cache assertion** aborts it, and so does a failed **fixture-integrity check** (§4.2) — both are measurement-integrity failures, not run failures. The cache assertion is evaluated on the first cell that actually *completed* (not `error`, not `refusal`): a first run that died at turn 1 on a 429 has `cacheReadTokens === 0` for reasons that say nothing about caching, and aborting the sweep on it would be a false alarm.
 
 ### 10.1 Variant definition (`variants.ts`)
 
@@ -956,12 +965,14 @@ Vendor-condition mapping is in §5.3 and happens entirely in the adapters. A ven
 | `ANTHROPIC_API_KEY` | — | env. Required **only** if a selected variant names `provider: "anthropic"`. |
 | `--variant` | `baseline` | CLI, repeatable |
 | `--reps` | 3 | CLI |
-| `--tasks` | all | CLI, glob over fixture ids |
+| `--tasks` | all | CLI, repeatable. **Exact fixture-id match**, not a glob: `loadFixtures` keeps a directory only if `--tasks` lists its id verbatim (`--tasks 003-swapped-args`). No fixture id matching any value is a hard error, so a typo cannot quietly sweep nothing. |
 | `--concurrency` | 4 | CLI |
 | `--keep-temp` | false | CLI |
 | `--db` | `./eval.db` | CLI |
 
-Key checks happen at variant-selection time, before the first fixture is copied — not lazily at the first request, two minutes into a sweep:
+`--reps`, `--concurrency`, and `--max-steps` are validated as positive integers in `cli.ts` and exit non-zero naming the flag otherwise. `Number("abc")` is `NaN` and `--concurrency 0` makes the worker pool run nothing: either would otherwise produce a sweep that measures zero cells and exits 0, which reads as success.
+
+Key checks happen at variant-selection time, before the first fixture is copied — and now before `openStore`, so a sweep that cannot run leaves no empty `eval.db` (plus WAL) behind. Together with a `costUsd(model, zeroUsage())` price preflight, everything that can refuse the sweep refuses it before the first token is bought:
 
 ```ts
 function requireKey(p: ProviderId) {

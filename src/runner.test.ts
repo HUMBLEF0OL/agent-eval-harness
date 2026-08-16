@@ -1,6 +1,10 @@
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { assertPrefixLongEnough, pool, requireKey } from "./runner.js";
+import { assertFixtureIntact, assertPrefixLongEnough, pool, requireKey } from "./runner.js";
 import { zeroUsage } from "./cost.js";
+import { makeSandbox } from "./sandbox.js";
+import { hashGuardedFiles } from "./score/tamper.js";
 
 describe("assertPrefixLongEnough", () => {
   it("throws when the cacheable prefix is under the 1024-token floor", () => {
@@ -9,9 +13,34 @@ describe("assertPrefixLongEnough", () => {
   });
 
   it("sums all three prompt categories, not just uncached input", () => {
-    expect(() => assertPrefixLongEnough("baseline", {
-      ...zeroUsage(), inputTokens: 100, cacheWriteTokens: 1200,
-    })).not.toThrow();
+    // 400 + 300 + 500 = 1200, over the floor, but no single category is — so this
+    // passes only if all three are summed.
+    const spread = { ...zeroUsage(), inputTokens: 400, cacheWriteTokens: 300, cacheReadTokens: 500 };
+    expect(() => assertPrefixLongEnough("baseline", spread)).not.toThrow();
+    for (const k of ["inputTokens", "cacheWriteTokens", "cacheReadTokens"] as const) {
+      expect(() => assertPrefixLongEnough("baseline", { ...zeroUsage(), [k]: spread[k] }))
+        .toThrow(/below the 1024/);
+    }
+  });
+});
+
+describe("assertFixtureIntact", () => {
+  it("passes on an untouched fixture and names the file when the restore source is poisoned", () => {
+    const dir = makeSandbox("aeh-fixint-");
+    try {
+      const testFile = path.join(dir, "src", "sum.test.ts");
+      fs.mkdirSync(path.dirname(testFile), { recursive: true });
+      fs.writeFileSync(testFile, "expect(sum([1,2])).toBe(3)");
+      const baseline = hashGuardedFiles(dir);
+
+      expect(() => assertFixtureIntact("001-off-by-one", dir, baseline)).not.toThrow();
+
+      fs.writeFileSync(testFile, "expect(true).toBe(true)");
+      expect(() => assertFixtureIntact("001-off-by-one", dir, baseline))
+        .toThrow(/001-off-by-one.*src\/sum\.test\.ts/s);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 

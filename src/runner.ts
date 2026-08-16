@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { costUsd, promptTokens } from "./cost.js";
+import { costUsd, promptTokens, zeroUsage } from "./cost.js";
 import { runLoop, type LoopConfig } from "./loop.js";
 import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
@@ -47,6 +47,24 @@ export function assertPrefixLongEnough(name: string, warm: UsageTotals): void {
       `variant ${name}: cacheable prefix is ${prefix} tokens, below the 1024 minimum ` +
       `(with margin). Caching would silently do nothing. Lengthen SYSTEM_PROMPT with ` +
       `useful tool-use guidance — not filler.`,
+    );
+  }
+}
+
+/** The fixture's `repo/` is the restore source scoreTests copies test files back
+ *  from (TSD §9.1), and vitest executes model-authored code with harness
+ *  privileges — so a run that writes outside its sandbox could rewrite that
+ *  source and silently poison every later run of the task. Hashes are taken once
+ *  at sweep start and re-checked before every scoring call; a mismatch means the
+ *  reference is no longer trustworthy, so the sweep aborts rather than producing
+ *  numbers scored against a corrupted baseline (TSD §4.2). */
+export function assertFixtureIntact(id: string, repoDir: string, baseline: Map<string, string>): void {
+  const { tampered, changed } = diffHashes(baseline, hashGuardedFiles(repoDir));
+  if (tampered) {
+    throw new Error(
+      `fixture ${id}: guarded files under ${repoDir} changed during the sweep ` +
+      `(${changed.join(", ")}). The restore source for this task is corrupted, so every ` +
+      `later run scored against it would be meaningless. Aborting; restore the fixture from git.`,
     );
   }
 }
@@ -109,23 +127,35 @@ function loadFixtures(filter?: string[]) {
 }
 
 export async function runSweep(opts: SweepOptions): Promise<void> {
-  const store = openStore(opts.db);
   const fixtures = loadFixtures(opts.tasks);
   if (fixtures.length === 0) throw new Error("no fixtures matched --tasks");
   if (opts.judge) requireKey("openai");     // the judge always calls OpenAI (JUDGE_MODEL)
 
-  try {
-    for (const name of opts.variants) {
-      const variant = VARIANTS[name];
-      if (!variant) throw new Error(`unknown variant: ${name}`);
-      const provider = PROVIDERS[variant.provider];
-      if (!provider) throw new Error(`unknown provider ${variant.provider} in variant ${name}`);
-      requireKey(variant.provider);          // fail before spending an hour
-      if (opts.judge && variant.model === JUDGE_MODEL) {
-        throw new Error(`variant ${name}: judge model ${JUDGE_MODEL} equals the model under ` +
-          `test — a self-judged run is not a check. Pick a different JUDGE_MODEL.`);
-      }
+  // Every reason a sweep can refuse to start is checked here, before openStore:
+  // a sweep that cannot run must not leave an empty eval.db (plus its WAL files)
+  // behind, and an unpriced model must fail now rather than after a paid run.
+  const selected = opts.variants.map(name => {
+    const variant = VARIANTS[name];
+    if (!variant) throw new Error(`unknown variant: ${name}`);
+    const provider = PROVIDERS[variant.provider];
+    if (!provider) throw new Error(`unknown provider ${variant.provider} in variant ${name}`);
+    requireKey(variant.provider);          // fail before spending an hour
+    costUsd(variant.model, zeroUsage());   // throws on an unpriced model — before any spend
+    if (opts.judge && variant.model === JUDGE_MODEL) {
+      throw new Error(`variant ${name}: judge model ${JUDGE_MODEL} equals the model under ` +
+        `test — a self-judged run is not a check. Pick a different JUDGE_MODEL.`);
+    }
+    return { name, variant, provider };
+  });
 
+  // Restore-source integrity baseline, taken once before anything executes.
+  const pristine = new Map(fixtures.map(f =>
+    [f.id, hashGuardedFiles(path.join(f.dir, "repo"))]));
+
+  const store = openStore(opts.db);
+
+  try {
+    for (const { name, variant, provider } of selected) {
       const cfg: LoopConfig = {
         model: variant.model, effort: variant.effort, systemPrompt: variant.systemPrompt,
         tools: variant.tools, maxTokensPerTurn: 16000, cacheKey: name, maxSteps: opts.maxSteps,
@@ -148,11 +178,18 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
           fs.cpSync(path.join(fixture.dir, "repo"), root, { recursive: true });
           const before = hashGuardedFiles(root);
 
+          // Re-running a cell replaces its trajectory; without this the second
+          // run interleaves with the first under duplicate seq values.
+          store.clearEvents(runId);
           const emit = (e: EventInput) => store.insertEvent(runId, e);
           const result = await runLoop(provider, cfg, fixture.meta.prompt, makeTools(root), emit);
 
           const after = hashGuardedFiles(root);
           const tamper = diffHashes(before, after);
+
+          // scoreTests restores from the live fixture — prove it is still the
+          // fixture we started with before trusting anything it produces.
+          assertFixtureIntact(fixture.id, path.join(fixture.dir, "repo"), pristine.get(fixture.id)!);
 
           // Scored only when the run produced an outcome (TSD §12).
           const scorable = result.stop !== "refusal" && result.stop !== "error";
@@ -191,7 +228,10 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             }
           }
 
-          if (!cacheChecked) {
+          // Only a run that actually completed says anything about caching: a
+          // first cell that died at turn 1 (a 429 on fan-out) or refused has
+          // cacheReadTokens 0 for reasons that have nothing to do with the cache.
+          if (!cacheChecked && scorable) {
             cacheChecked = true;
             if (result.usage.cacheReadTokens === 0) {
               throw new Error(

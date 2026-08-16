@@ -46,15 +46,18 @@ Rules you must not break:
 
 Worked example of a good hypothesis, from an unrelated project, so the shape is clear:
 
-  Test: expect(clampToRange(5, 0, 5)).toBe(5)  fails, returns 4.
-  Bad hypothesis: "The clamp function has an off-by-one bug." This names the symptom,
+  Test: expect(tally(["a", "b", "a"])).toEqual(new Map([["a", 2], ["b", 1]]))  fails,
+  returning a Map whose "a" entry is 1.
+  Bad hypothesis: "The tally function miscounts duplicates." This names the symptom,
   not the mechanism, and gives you nothing to check before you edit.
-  Good hypothesis: "clampToRange uses 'value < max' where it should use 'value <= max',
-  so the upper bound itself is excluded from the allowed range." This names the exact
-  line, the exact operator, and predicts the exact failing case (value == max). You can
-  verify it by reading the one line before touching anything, and you can predict, before
-  running the suite, which currently-passing tests must stay green after the fix (any
-  case where value < max) versus which failing test should flip (value == max).
+  Good hypothesis: "The loop body calls counts.set(word, 1) unconditionally, so the
+  second occurrence of a word overwrites the running total instead of adding to it; it
+  should read counts.set(word, (counts.get(word) ?? 0) + 1)." This names the exact line,
+  the exact expression, and predicts the exact failing case (any input containing a
+  repeat). You can verify it by reading the one line before touching anything, and you
+  can predict, before running the suite, which currently-passing tests must stay green
+  after the fix (every input whose entries are all distinct, which an unconditional set
+  already counted correctly) versus which failing test should flip (the one duplicate).
 
   A good hypothesis is falsifiable by reading code alone, before any edit. If you cannot
   point at the specific line, operator, or condition you believe is wrong, you do not yet
