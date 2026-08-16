@@ -1,0 +1,49 @@
+{
+  "_comment": "Hand-written, not a live capture — OPENAI_API_KEY is unset in this environment so `npm run record` could not be run. This is a faithful reconstruction of a real OpenAI Responses API turn-2 payload shape (gpt-5-nano) and must be replaced by a real capture (`npm run record`) once a key is available.",
+  "id": "resp_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c5",
+  "object": "response",
+  "created_at": 1755331200,
+  "status": "completed",
+  "error": null,
+  "incomplete_details": null,
+  "instructions": "You are a coding agent. Use the tools to inspect and fix the project.",
+  "model": "gpt-5-nano-2025-08-07",
+  "output": [
+    {
+      "id": "rs_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c6",
+      "type": "reasoning",
+      "summary": []
+    },
+    {
+      "id": "msg_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c7",
+      "type": "message",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "The project contains src/sum.ts and src/sum.test.ts.",
+          "annotations": []
+        }
+      ]
+    }
+  ],
+  "parallel_tool_calls": true,
+  "previous_response_id": null,
+  "reasoning": { "effort": "low", "summary": null },
+  "store": false,
+  "temperature": 1,
+  "tool_choice": "auto",
+  "tools": [],
+  "top_p": 1,
+  "truncation": "disabled",
+  "usage": {
+    "input_tokens": 612,
+    "input_tokens_details": { "cached_tokens": 0 },
+    "output_tokens": 34,
+    "output_tokens_details": { "reasoning_tokens": 0 },
+    "total_tokens": 646
+  },
+  "user": null,
+  "metadata": {}
+}
