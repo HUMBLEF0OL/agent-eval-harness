@@ -52,4 +52,17 @@ describe("diffHashes", () => {
     fs.writeFileSync(path.join(root, "vitest.config.ts"), "export default { test: { include: [] } }");
     expect(diffHashes(before, hashGuardedFiles(root)).changed).toEqual(["vitest.config.ts"]);
   });
+
+  it("detects test exclusion smuggled into a new vite.config.ts", () => {
+    const before = hashGuardedFiles(root);
+    fs.writeFileSync(path.join(root, "vite.config.ts"), "export default { test: { include: [] } }");
+    expect(diffHashes(before, hashGuardedFiles(root)).changed).toEqual(["vite.config.ts"]);
+  });
+
+  it("detects a modified sibling-extension test (.spec.tsx)", () => {
+    fs.writeFileSync(path.join(root, "src", "b.spec.tsx"), "test('y', () => {})");
+    const before = hashGuardedFiles(root);
+    fs.writeFileSync(path.join(root, "src", "b.spec.tsx"), "test.skip('y', () => {})");
+    expect(diffHashes(before, hashGuardedFiles(root)).changed).toEqual(["src/b.spec.tsx"]);
+  });
 });

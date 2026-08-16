@@ -16,7 +16,12 @@ export function makeSandbox(prefix: string): string {
   return fs.mkdtempSync(path.join(base, prefix));
 }
 
-/** Runs the fixture suite inside `root`, resolving vitest from the harness install. */
+/** Runs the fixture suite inside `root`, resolving vitest from the harness install.
+ *
+ *  SIDE EFFECT: vite writes its cache into `<root>/node_modules/.vite/`, so after the
+ *  first call the sandbox is no longer a byte-identical copy of the fixture. Harmless
+ *  for tamper detection — hashGuardedFiles() skips node_modules — but do not treat a
+ *  post-run sandbox as pristine, and never diff it wholesale against the fixture. */
 export function runVitest(root: string, timeoutMs: number): SpawnSyncReturns<string> {
   // shell:true is required for npx resolution on Windows; the --root argument
   // is quoted because shell:true means a path containing a space (this repo's

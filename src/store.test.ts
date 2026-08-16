@@ -37,6 +37,32 @@ describe("store", () => {
     expect(runs[0]!.passed).toBe(1);
   });
 
+  it("replaces rather than interleaves the event stream on re-run of the same cell", () => {
+    store.upsertRun(row());
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call", payload: { attempt: 1 } });
+    store.insertEvent("001:baseline:0", { seq: 1, type: "llm_response", payload: { attempt: 1 } });
+
+    // Re-run of the same cell: the runner clears first, then writes the new stream.
+    store.clearEvents("001:baseline:0");
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call", payload: { attempt: 2 } });
+    store.insertEvent("001:baseline:0", { seq: 1, type: "llm_response", payload: { attempt: 2 } });
+    store.upsertRun(row());
+
+    const evs = store.eventsForRun("001:baseline:0");
+    expect(evs.map(e => e.seq)).toEqual([0, 1]);                        // not [0,0,1,1]
+    expect(evs.map(e => JSON.parse(e.payload!).attempt)).toEqual([2, 2]); // no stale trajectory
+  });
+
+  it("clears only the target run's events", () => {
+    store.upsertRun(row());
+    store.upsertRun(row({ id: "002:baseline:0" }));
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" });
+    store.insertEvent("002:baseline:0", { seq: 0, type: "llm_call" });
+    store.clearEvents("001:baseline:0");
+    expect(store.eventsForRun("001:baseline:0")).toHaveLength(0);
+    expect(store.eventsForRun("002:baseline:0")).toHaveLength(1);
+  });
+
   it("preserves NULL passed for refusals and errors", () => {
     store.upsertRun(row({ id: "x:y:0", stopReason: "refusal", passed: null }));
     expect(store.allRuns().find(r => r.id === "x:y:0")!.passed).toBeNull();

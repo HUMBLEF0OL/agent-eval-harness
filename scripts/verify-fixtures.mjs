@@ -26,19 +26,28 @@ const vitestStatus = (root) => runVitest(root, 120_000).status;
 
 let failures = 0;
 for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
-  const meta = JSON.parse(readFileSync(join(HARNESS_ROOT, "fixtures", id, "meta.json"), "utf8"));
-  const tmp = makeSandbox("aeh-verify-");
-  cpSync(join(HARNESS_ROOT, "fixtures", id, "repo"), tmp, { recursive: true });
+  // One broken fixture (bad meta.json, missing fixed/ file, stray non-directory)
+  // must not abort the sweep or strand its sandbox — report it and keep going.
+  let tmp;
+  try {
+    const meta = JSON.parse(readFileSync(join(HARNESS_ROOT, "fixtures", id, "meta.json"), "utf8"));
+    tmp = makeSandbox("aeh-verify-");
+    cpSync(join(HARNESS_ROOT, "fixtures", id, "repo"), tmp, { recursive: true });
 
-  const before = vitestStatus(tmp);
-  const fixed = readFileSync(join(HARNESS_ROOT, "fixtures", id, "fixed", meta.brokenFile), "utf8");
-  writeFileSync(join(tmp, meta.brokenFile), fixed);
-  const after = vitestStatus(tmp);
-  rmSync(tmp, { recursive: true, force: true });
+    const before = vitestStatus(tmp);
+    const fixed = readFileSync(join(HARNESS_ROOT, "fixtures", id, "fixed", meta.brokenFile), "utf8");
+    writeFileSync(join(tmp, meta.brokenFile), fixed);
+    const after = vitestStatus(tmp);
 
-  const ok = before !== 0 && after === 0;
-  if (!ok) failures++;
-  console.log(`${ok ? "ok  " : "FAIL"} ${id}  before=${before} after=${after}`);
+    const ok = before !== 0 && after === 0;
+    if (!ok) failures++;
+    console.log(`${ok ? "ok  " : "FAIL"} ${id}  before=${before} after=${after}`);
+  } catch (e) {
+    failures++;
+    console.log(`FAIL ${id}  ${e instanceof Error ? e.message : String(e)}`);
+  } finally {
+    if (tmp) rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 if (failures) { console.error(`${failures} fixture(s) invalid`); process.exit(1); }

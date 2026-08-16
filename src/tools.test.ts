@@ -3,6 +3,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { ALL_TOOLS, makeTools, resolveInRoot } from "./tools.js";
+import { HARNESS_ROOT, makeSandbox } from "./sandbox.js";
 
 let root: string;
 beforeEach(() => {
@@ -61,6 +62,22 @@ describe("makeTools", () => {
     const out = await makeTools(root).dispatch("read_file", {});
     expect(out.isError).toBe(true);
   });
+
+  // Sandbox must come from makeSandbox(): os.tmpdir() is on another drive and
+  // Node's ESM resolver cannot reach the harness install from there.
+  it("runs the suite of a broken fixture and reports its failing exit code", async () => {
+    const sandbox = makeSandbox("aeh-runtests-");
+    try {
+      fs.cpSync(path.join(HARNESS_ROOT, "fixtures", "001-off-by-one", "repo"), sandbox, { recursive: true });
+      const out = await makeTools(sandbox).dispatch("run_tests", {});
+      expect(out.isError).toBeFalsy();
+      expect(out.content).not.toMatch(/spawn error/);
+      expect(out.content).toMatch(/^exit code: [1-9]/);   // real non-zero exit, not "timeout"
+      expect(out.content).toMatch(/sum\.test\.ts/);        // real vitest output about the fixture
+    } finally {
+      fs.rmSync(sandbox, { recursive: true, force: true });
+    }
+  }, 90_000);
 });
 
 describe("ALL_TOOLS", () => {

@@ -43,6 +43,9 @@ CREATE INDEX IF NOT EXISTS idx_runs_variant ON runs(variant, task_id);
 export interface Store {
   upsertRun(r: RunRow): void;
   insertEvent(runId: string, e: EventInput): void;
+  /** Drops a run's whole event stream. The runner calls this BEFORE re-running a
+   *  cell — never from upsertRun, which lands after the events are already written. */
+  clearEvents(runId: string): void;
   allRuns(): RunRow[];
   eventsForRun(runId: string): StoredEvent[];
   close(): void;
@@ -63,6 +66,8 @@ export function openStore(dbPath: string): Store {
   const insEv = db.prepare(`INSERT INTO events
     (run_id,seq,type,name,payload,in_tok,cw_tok,cr_tok,out_tok,rsn_tok,latency_ms,ts)
     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
+
+  const delEv = db.prepare(`DELETE FROM events WHERE run_id = ?`);
 
   const selRuns = db.prepare(`SELECT
     id, task_id AS taskId, variant, provider, model, effort, rep,
@@ -90,6 +95,7 @@ export function openStore(dbPath: string): Store {
         u?.outputTokens ?? null, u?.reasoningTokens ?? null,
         e.latencyMs ?? null, new Date().toISOString());
     },
+    clearEvents: (runId) => { delEv.run(runId); },
     allRuns: () => selRuns.all() as RunRow[],
     eventsForRun: (runId) => selEvents.all(runId) as StoredEvent[],
     close: () => db.close(),

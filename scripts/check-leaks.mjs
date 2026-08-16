@@ -1,7 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, sep } from "node:path";
 
-const VENDOR = /from\s+["'](openai|@anthropic-ai\/sdk)["']/;
+// Covers every import form that can reach a vendor SDK — static `from "x"`,
+// bare `import "x"`, dynamic `import("x")`, `require("x")` — and any subpath
+// (`openai/resources`), because each of those bypassed the old `from`-only regex.
+const VENDOR = /\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk)(?:\/[^"']*)?["']/;
 const ALLOWED = join("src", "provider");
 const offenders = [];
 
