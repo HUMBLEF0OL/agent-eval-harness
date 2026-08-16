@@ -4,7 +4,7 @@ import { join, relative, sep } from "node:path";
 // Covers every import form that can reach a vendor SDK — static `from "x"`,
 // bare `import "x"`, dynamic `import("x")`, `require("x")` — and any subpath
 // (`openai/resources`), because each of those bypassed the old `from`-only regex.
-const VENDOR = /\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk)(?:\/[^"']*)?["']/;
+const VENDOR = /\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk|@google\/genai)(?:\/[^"']*)?["']/;
 const ALLOWED = join("src", "provider");
 const offenders = [];
 
