@@ -31,7 +31,7 @@ export function normaliseUsage(res: Res): UsageTotals {
 }
 
 export function mapStop(res: Res): StopReason {
-  switch (res.stop_reason as string) {
+  switch (res.stop_reason) {
     case "end_turn":   return "end_turn";
     case "tool_use":   return "tool_use";
     case "max_tokens": return "max_tokens";
