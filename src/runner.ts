@@ -161,11 +161,15 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
           // Stretch (TSD §9.3), opt-in only: hash-based tamper detection cannot
           // see a hardcoded/special-cased/mocked fix that still edits real
           // source. Judged by JUDGE_MODEL, never by the model under test.
+          // Passing runs only: a patch that never made the suite green did not
+          // game the test, and the rate is published as conditional on passing
+          // (see the report footnote and the README). Also keeps the extra
+          // billed call off runs whose verdict would mean nothing.
           let sourceCheat: number | null = null;
           let sourceCheatKind: string | null = null;
           let sourceCheatEvidence: string | null = null;
           let judgeUsd = 0;
-          if (opts.judge && scorable) {
+          if (opts.judge && passed === 1) {
             const diff = buildSourceDiff(path.join(fixture.dir, "repo"), root);
             if (diff) {
               const judgeCfg: SessionConfig = {

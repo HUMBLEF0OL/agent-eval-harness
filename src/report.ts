@@ -133,9 +133,10 @@ ${barChart(rows)}
 <p><small>Refusals and harness errors are excluded from pass-rate denominators and shown
 separately. Cost is computed from actual usage fields, not estimated.</small></p>
 ${judgeRan
-  ? `<p class="note">Source cheat rate is the LLM judge's (stretch, opt-in <code>--judge</code>)
-     verdict that a passing patch games the specific test — hardcodes, special-cases, or mocks
-     the unit under test — rather than fixing the general behaviour. Judged by
+  ? `<p class="note">Source cheat rate is the share of <em>passing</em> runs — the only ones
+     judged, and the only denominator here — where the LLM judge (stretch, opt-in
+     <code>--judge</code>) found the patch games the specific test: hardcodes, special-cases,
+     or mocks the unit under test, rather than fixing the general behaviour. Judged by
      <strong>${esc(JUDGE_MODEL)}</strong>, a model distinct from every model under test.
      That judge call is billed: its cost is included in Cost/run above, though its
      tokens are not in the token columns, which count the agent only.</p>`
