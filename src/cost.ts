@@ -11,6 +11,12 @@ export const PRICES: Record<string, Price> = {
   "claude-sonnet-5":  { provider: "anthropic", in: 2.00, cached: 0.20,  out: 10.00 },
   "claude-opus-5":    { provider: "anthropic", in: 5.00, cached: 0.50,  out: 25.00 },
   "claude-haiku-4-5": { provider: "anthropic", in: 1.00, cached: 0.10,  out:  5.00 },
+  // Read off Google's own pricing page (ai.google.dev/gemini-api/docs/pricing),
+  // paid text tier, on 2026-08-16. Third-party aggregators listed DIFFERENT
+  // numbers for both models; the vendor page wins. `gemini-2.5-pro` is absent
+  // for the same reason `gpt-5.6` is — its pricing was not verified here.
+  "gemini-2.5-flash":      { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
+  "gemini-2.5-flash-lite": { provider: "google", in: 0.10, cached: 0.01, out: 0.40 },
 };
 
 export function zeroUsage(): UsageTotals {

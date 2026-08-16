@@ -106,4 +106,15 @@ export const VARIANTS: Record<string, Variant> = {
   nano:            { ...baseline, model: "gpt-5-nano" },
   // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
   anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
+
+  // unrun: needs GEMINI_API_KEY. The same effort ladder as the OpenAI arm above,
+  // deliberately — a cross-vendor comparison is only worth reading if the two
+  // arms differ in the vendor and nothing else. Same SYSTEM_PROMPT, so each
+  // variant's cacheable prefix stays byte-identical across its runs (TSD §6.3).
+  "gemini-flash":        { ...baseline, provider: "google", model: "gemini-2.5-flash" },
+  "gemini-effort-med":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "medium" },
+  "gemini-effort-low":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "low" },
+  "gemini-no-run-tests": { ...baseline, provider: "google", model: "gemini-2.5-flash",
+                           tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
+  "gemini-lite":         { ...baseline, provider: "google", model: "gemini-2.5-flash-lite" },
 };

@@ -26,8 +26,26 @@ describe("costUsd", () => {
     expect(withReasoning).toBe(without);
   });
 
+  it("prices each token category at its own rate for a Gemini model too", () => {
+    // gemini-2.5-flash: in 0.30, cached 0.03, out 2.50 per 1M
+    const cost = costUsd("gemini-2.5-flash", u({
+      inputTokens: 1_000_000,
+      cacheWriteTokens: 1_000_000,   // 1.25x input = 0.375
+      cacheReadTokens: 1_000_000,    // 0.03
+      outputTokens: 1_000_000,       // 2.50
+    }));
+    expect(cost).toBeCloseTo(0.30 + 0.375 + 0.03 + 2.50, 6);
+  });
+
   it("has no price entry for gpt-5.6 — unverified pricing must not be guessed", () => {
     expect(PRICES["gpt-5.6"]).toBeUndefined();
+  });
+
+  it("has no price entry for gemini-2.5-pro — same reason", () => {
+    // Google's page lists a tiered Pro rate that was not verified here, so the
+    // model is unpriced and costUsd refuses it rather than inventing a number.
+    expect(PRICES["gemini-2.5-pro"]).toBeUndefined();
+    expect(() => costUsd("gemini-2.5-pro", zeroUsage())).toThrow(/no price for model/);
   });
 });
 

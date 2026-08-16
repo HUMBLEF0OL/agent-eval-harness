@@ -57,7 +57,8 @@ The one place complexity genuinely increases is token accounting (§5), because 
 | `src/types.ts` | The provider contract and the normalised records everything else speaks. No imports from either vendor SDK. |
 | `src/provider/openai.ts` | OpenAI Responses API adapter. The only file that imports `openai`. |
 | `src/provider/anthropic.ts` | Anthropic Messages API adapter. The only file that imports `@anthropic-ai/sdk`. |
-| `src/provider/index.ts` | `PROVIDERS: Record<string, Provider>`. Eight lines. |
+| `src/provider/google.ts` | Google Gemini `generateContent` adapter. The only file that imports `@google/genai`. Also owns its own rate-limit throttle and 429 retry (§5.5). |
+| `src/provider/index.ts` | `PROVIDERS: Record<ProviderId, Provider>`. Ten lines. |
 | `src/loop.ts` | Hand-rolled agent loop. Emits events. Knows nothing about vendors, fixtures, or scoring. |
 | `src/tools.ts` | Tool definitions (vendor-neutral JSON Schema) + handlers, sandboxed to a run root. |
 | `src/store.ts` | SQLite schema, insert helpers, query helpers for the report. |
@@ -513,25 +514,37 @@ return {
 
 Everything an adapter has to reconcile, in one place. This table is the spec for the unit tests in §11.
 
-| Concept | Anthropic Messages | OpenAI Responses |
-|---|---|---|
-| System prompt | `system` (array of blocks) | `instructions` (string) |
-| Effort | `output_config.effort` | `reasoning.effort` |
-| Tool schema key | `input_schema` | `parameters` (+ `strict`) |
-| Tool call | `tool_use` block, `id`, `input` is an **object** | `function_call` item, `call_id`, `arguments` is a **JSON string** |
-| Tool result | `tool_result` blocks, **all in one** user message | `function_call_output` items, **one each** |
-| Opaque replay blob | `thinking` block (signature) | `reasoning` item (`encrypted_content`) |
-| Output cap | `max_tokens` | `max_output_tokens` |
-| Truncated | `stop_reason: "max_tokens"` | `status: "incomplete"` + `incomplete_details.reason` |
-| Refused | `stop_reason: "refusal"` | `incomplete_details.reason: "content_filter"`, or a `refusal` content part |
-| Wants tools | `stop_reason: "tool_use"` | any `function_call` in `output` |
-| Uncached input | `usage.input_tokens` (excludes cached) | `usage.input_tokens − input_tokens_details.cached_tokens` |
-| Cache write | `usage.cache_creation_input_tokens` | **not reported** (§7.4) |
-| Cache read | `usage.cache_read_input_tokens` | `usage.input_tokens_details.cached_tokens` |
-| Reasoning tokens | not reported (inside `output_tokens`) | `usage.output_tokens_details.reasoning_tokens` |
-| Effort vocabulary | `low` `medium` `high` `xhigh` `max` | `low` `medium` `high` `xhigh` |
+| Concept | Anthropic Messages | OpenAI Responses | Google `generateContent` |
+|---|---|---|---|
+| System prompt | `system` (array of blocks) | `instructions` (string) | `config.systemInstruction` |
+| Effort | `output_config.effort` | `reasoning.effort` | `config.thinkingConfig.thinkingBudget` — a **token budget**, not a level |
+| Tool schema key | `input_schema` | `parameters` (+ `strict`) | `parameters`, nested under one `tools[0].functionDeclarations` |
+| Tool call | `tool_use` block, `id`, `input` is an **object** | `function_call` item, `call_id`, `arguments` is a **JSON string** | `functionCall` part, **no id**, `args` is an **object** |
+| Tool result | `tool_result` blocks, **all in one** user message | `function_call_output` items, **one each** | `functionResponse` parts, **all in one** user `Content`, matched by **name** |
+| Opaque replay blob | `thinking` block (signature) | `reasoning` item (`encrypted_content`) | thought part — the whole `Content` is echoed back |
+| Output cap | `max_tokens` | `max_output_tokens` | `config.maxOutputTokens` |
+| Truncated | `stop_reason: "max_tokens"` | `status: "incomplete"` + `incomplete_details.reason` | `finishReason: "MAX_TOKENS"` |
+| Refused | `stop_reason: "refusal"` | `incomplete_details.reason: "content_filter"`, or a `refusal` content part | `finishReason` in `SAFETY` / `RECITATION` / `PROHIBITED_CONTENT` / `BLOCKLIST` / `SPII` |
+| Wants tools | `stop_reason: "tool_use"` | any `function_call` in `output` | any `functionCall` part |
+| Uncached input | `usage.input_tokens` (excludes cached) | `usage.input_tokens − input_tokens_details.cached_tokens` | `promptTokenCount − cachedContentTokenCount` |
+| Cache write | `usage.cache_creation_input_tokens` | **not reported** (§7.4) | **not reported** — caching is implicit (§6) |
+| Cache read | `usage.cache_read_input_tokens` | `usage.input_tokens_details.cached_tokens` | `cachedContentTokenCount` |
+| Reasoning tokens | not reported (inside `output_tokens`) | `usage.output_tokens_details.reasoning_tokens` | `thoughtsTokenCount`, and it must be **added to** `candidatesTokenCount` |
+| Effort vocabulary | `low` `medium` `high` `xhigh` `max` | `low` `medium` `high` `xhigh` | mapped to a `thinkingBudget` (1024 / 4096 / 16384 / 24576) |
 
-Neutral effort vocabulary is the four values both vendors share. Anthropic's `max` is reachable only by editing a variant directly and is not swept.
+Neutral effort vocabulary is the four values every vendor can express. Anthropic's `max` is reachable only by editing a variant directly and is not swept; `minimal` is not in the vocabulary either. Mapping the four onto a vendor knob — including Google's raw token budget — is the adapter's job, never the loop's.
+
+**The three output rows are the highest-value lines in this document**, because all three vendors are different and only one arrangement is right for each:
+
+| | Does uncached input need `− cached`? | Does `outputTokens` need `+ reasoning`? |
+|---|---|---|
+| OpenAI | **yes** — `input_tokens` includes cached | no — `output_tokens` already includes reasoning |
+| Anthropic | **no** — `input_tokens` already excludes cached | no — thinking is inside `output_tokens`, and no count is reported |
+| Google | **yes** — `promptTokenCount` includes cached | **yes** — `candidatesTokenCount` excludes thoughts |
+
+Each adapter's unit tests pin its own row, so collapsing the three into one shared normaliser breaks exactly one test rather than silently mis-billing one vendor.
+
+One caveat is **encoded rather than resolved**: a third-party source claims that on the Gemini Developer API (as opposed to Vertex) `candidatesTokenCount` already includes thinking tokens, which contradicts the SDK's own doc comment on `totalTokenCount`. It cannot be settled without a key. So `usageArithmeticHolds()` re-derives the documented identity — `total === prompt + candidates + toolUsePrompt + thoughts` — from every real response, and `normaliseUsage` warns **once** if it ever fails. If that warning appears on the first live call, Google's `outputTokens` is double-counting thoughts and this row is what to change.
 
 ### 5.4 `provider/index.ts`
 
@@ -539,28 +552,60 @@ Neutral effort vocabulary is the four values both vendors share. Anthropic's `ma
 export const PROVIDERS: Record<ProviderId, Provider> = {
   openai:    openaiProvider,
   anthropic: anthropicProvider,
+  google:    googleProvider,
 };
 ```
 
-That is the registry. A variant names a provider by string; the runner looks it up and fails loudly on a miss.
+That is the registry. A variant names a provider by string; the runner looks it up and fails loudly on a miss. `Record<ProviderId, Provider>` is what makes adding a `ProviderId` without an adapter a compile error — the same trick `requireKey`'s `KEY_ENV` table uses in §13.
+
+### 5.5 Google (`provider/google.ts`) — `generateContent`
+
+Numbered after the registry so the cross-references to §5.3 stay valid; it is the third adapter, not an afterthought.
+
+**Request:**
+
+```ts
+const res = await client().models.generateContent({
+  model: cfg.model,
+  contents,                                  // the session's private Content[] array
+  config: {
+    systemInstruction: cfg.systemPrompt,     // part of the cacheable prefix, with `tools`
+    tools: [{ functionDeclarations: cfg.tools.map(t => ({
+      name: t.name, description: t.description, parameters: t.parameters,
+    })) }],                                  // ONE Tool carrying every declaration
+    maxOutputTokens: cfg.maxTokensPerTurn,
+    thinkingConfig: { thinkingBudget: THINKING_BUDGET[cfg.effort], includeThoughts: false },
+  },
+});
+```
+
+`thinkingBudget: 0` means thinking **disabled** and is deliberately not the target of any effort level — the sweep compares effort levels against each other, and "off" is not one of them. It *is* used by `prewarm`, which has nothing to think about. `-1` (automatic) is also unused: an unbounded budget makes `effort` unmeasurable.
+
+**History:** the entire returned `Content` is pushed back, parts included, and all tool results go into **one** user `Content` of `functionResponse` parts — Anthropic's shape, not OpenAI's. Gemini's `functionResponse` is keyed by function **name**, but the neutral `ToolResult` carries only an id, so `extractToolCalls` synthesises `${name}-${index}` as the id and `buildToolResultContent` recovers the name from it. Always synthesised, even if the API ever supplies an id, because the round-trip is what makes the pairing possible.
+
+**Self-throttle and retry — adapter-owned, not runner-owned.** Free-tier Gemini is roughly 10 RPM / 250 RPD for 2.5 Flash and 15 RPM / 1000 RPD for Flash-Lite (AI Studio shows the authoritative number per account). That is below what even `--concurrency 1` generates, so the adapter paces itself: a promise-chained gate spaces the **start** of every request by `GEMINI_MIN_INTERVAL_MS` (default 6500ms, ~9 RPM), which serialises N concurrent sessions into N spaced starts rather than letting them all fire at once. On top of that, `withRetry` retries **429 and 5xx only**, up to 5 attempts, honouring the server's `Retry-After` header or the `"retryDelay": "27s"` hint Google embeds in a 429 body, with jittered exponential backoff otherwise. A 400 or 401 re-throws immediately, and so does the final attempt — the loop must be able to record `stop: "error"` rather than hang.
+
+This lives in the adapter for the same reason effort mapping does: a rate limit is a vendor fact. Putting it in the runner would make `--concurrency` mean something different per provider.
 
 ---
 
 ## 6. Prompt caching
 
-Both vendors cache on a **prefix match** — any byte change invalidates everything after it — but almost nothing else is the same.
+All three vendors cache on a **prefix match** — any byte change invalidates everything after it — but almost nothing else is the same.
 
-| | Anthropic | OpenAI |
-|---|---|---|
-| Mechanism | Explicit `cache_control` breakpoints, max 4 per request | Automatic on any qualifying prefix |
-| Minimum prefix | 512 (Opus 5) / 1024 (Sonnet 5) / 4096 (Haiku 4.5) | 1024, and documented as inconsistent just above the threshold |
-| TTL | 5 minutes | 30 minutes |
-| Routing under parallelism | n/a | `prompt_cache_key` — without it, parallel requests can land on different machines and miss |
-| Lookback | Each breakpoint walks back ≤20 content blocks | n/a |
-| Write cost | 1.25× input, reported as `cache_creation_input_tokens` | 1.25× input, **not reported in `usage`** |
-| Failure mode when the prefix is too short | Silent. `cache_creation_input_tokens: 0` forever, no error. | Silent. `cached_tokens: 0` forever, no error. |
+| | Anthropic | OpenAI | Google |
+|---|---|---|---|
+| Mechanism | Explicit `cache_control` breakpoints, max 4 per request | Automatic on any qualifying prefix | Implicit, on by default for 2.5+ models. No breakpoint to place, and explicit caching is not used |
+| Minimum prefix | 512 (Opus 5) / 1024 (Sonnet 5) / 4096 (Haiku 4.5) | 1024, and documented as inconsistent just above the threshold | 1024 (2.5 Flash / Flash-Lite) / 2048 (2.5 Pro) |
+| TTL | 5 minutes | 30 minutes | Not documented as a fixed number |
+| Routing under parallelism | n/a | `prompt_cache_key` — without it, parallel requests can land on different machines and miss | n/a — no routing key is exposed |
+| Lookback | Each breakpoint walks back ≤20 content blocks | n/a | n/a |
+| Write cost | 1.25× input, reported as `cache_creation_input_tokens` | 1.25× input, **not reported in `usage`** | **No write count is reported at all** — `cacheWriteTokens: 0` |
+| Failure mode when the prefix is too short | Silent. `cache_creation_input_tokens: 0` forever, no error. | Silent. `cached_tokens: 0` forever, no error. | Silent. `cachedContentTokenCount` absent forever, no error. |
 
-**Both vendors fail silently.** That shared property is what makes §6.4 the highest-value assertion in the harness.
+**Every vendor fails silently.** That shared property is what makes §6.4 the highest-value assertion in the harness.
+
+The minimum-prefix row is per **model**, not per vendor, which is why §6.4's floor is derived from the variant rather than hardcoded.
 
 ### 6.1 Anthropic breakpoint plan
 
@@ -621,6 +666,22 @@ const res = await client.messages.create({
 return normaliseUsage(res);
 ```
 
+**Google:**
+
+```ts
+const res = await client().models.generateContent({
+  model: cfg.model,
+  contents: [{ role: "user", parts: [{ text: "warmup" }] }],
+  config: {
+    systemInstruction: cfg.systemPrompt,     // the system instruction + tools ARE the prefix
+    tools: mapTools(cfg.tools),
+    maxOutputTokens: 16,
+    thinkingConfig: { thinkingBudget: 0 },   // 0 = disabled; nothing to think about
+  },
+});
+return normaliseUsage(res);
+```
+
 Toggling `thinking` invalidates only the **messages** cache; the tools and system caches survive. That is what makes a thinking-disabled pre-warm legal for thinking-enabled runs.
 
 `prewarm` returns its own `UsageTotals`, and the runner uses it for two checks that cost nothing extra:
@@ -628,14 +689,19 @@ Toggling `thinking` invalidates only the **messages** cache; the tools and syste
 **Check 1 — the prefix is long enough to cache at all.**
 
 ```ts
+// floor = cacheFloor(variant): the model's caching minimum from §6's table, + 76 margin.
+// 1100 for OpenAI, Sonnet 5 and Gemini 2.5 Flash; 2124 for Gemini 2.5 Pro; 4172 for Haiku 4.5.
 const prefix = warm.inputTokens + warm.cacheWriteTokens + warm.cacheReadTokens;
-if (prefix < 1100) {
+if (prefix < floor) {
   throw new Error(
-    `variant ${name}: cacheable prefix is ${prefix} tokens, below the 1024 minimum ` +
-    `(with margin). Caching would silently do nothing. Lengthen the system prompt.`,
+    `variant ${name}: cacheable prefix is ${prefix} tokens, below this variant's ${floor}-token ` +
+    `floor (the model's caching minimum, with margin). Caching would silently do nothing. ` +
+    `Lengthen SYSTEM_PROMPT with useful tool-use guidance — not filler.`,
   );
 }
 ```
+
+The floor is **per-variant**, not a constant: one hardcoded 1100 was OpenAI's 1024 plus margin and would have passed a Gemini 2.5 Pro variant whose prefix caches nothing, which is exactly the silent 5× cost error this check exists to catch. `cacheFloor` keys on the model (model names are already vendor-unique) and defaults to 1024 + margin, so an unlisted model is treated as the common case rather than waved through.
 
 This replaces rev 1's "measure it with `countTokens` beforehand" open question. The pre-warm response already contains the prompt token count, so the measurement is free and happens on every sweep rather than once during development. There is no `countTokens` endpoint on the OpenAI side anyway, and adding `tiktoken` to answer a question the API already answers would be a dependency bought with nothing.
 
@@ -645,7 +711,7 @@ If the prompt lands short, it gains genuinely useful content — explicit tool-u
 
 After the second turn of the first run of a variant, assert `cacheReadTokens > 0` and abort the sweep loudly if not. Both vendors fail silently; this assertion is the only thing standing between a silent cache miss and a study whose entire cost axis is wrong by 5×.
 
-Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execute continuously with far less than 5 minutes between requests, so no scheduled re-warm is needed on either.
+Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execute continuously with far less than 5 minutes between requests, so no scheduled re-warm is needed on either. Google does not document a fixed TTL for implicit caching; the same continuous-execution argument applies, and Check 2 would catch it if it did not.
 
 ---
 
@@ -687,10 +753,15 @@ export const PRICES: Record<string, { provider: ProviderId; in: number; cached: 
   "claude-sonnet-5":  { provider: "anthropic", in: 2.00, cached: 0.20,  out: 10.00 },
   "claude-opus-5":    { provider: "anthropic", in: 5.00, cached: 0.50,  out: 25.00 },
   "claude-haiku-4-5": { provider: "anthropic", in: 1.00, cached: 0.10,  out:  5.00 },
+
+  // Google's own pricing page (ai.google.dev/gemini-api/docs/pricing), paid text
+  // tier. Third-party aggregators listed different numbers for both; vendor wins.
+  "gemini-2.5-flash":      { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
+  "gemini-2.5-flash-lite": { provider: "google", in: 0.10, cached: 0.01, out: 0.40 },
 };
 ```
 
-`gpt-5.6` (non-Terra) is **deliberately absent**: its pricing was not verified when this was written, and §7.1 throws rather than guessing. Add it after checking the pricing page.
+`gpt-5.6` (non-Terra) and `gemini-2.5-pro` are **deliberately absent**: their pricing was not verified when this was written, and §7.1 throws rather than guessing. Add them after checking the pricing page. Both absences are pinned by a test, so "someone will add it later" does not quietly become "someone guessed it later".
 
 `gpt-5.6-terra` also applies a long-context surcharge — 2× input, 1.5× output above 272k input tokens. Our prompts top out around 60k, so the formula ignores it. If a fixture ever produces a 272k-token prompt, the cost is understated and the fix is a conditional multiplier; recording absolute token counts means old runs stay recomputable.
 
@@ -882,6 +953,15 @@ export const VARIANTS: Record<string, Variant> = {
 
   // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
   anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
+
+  // unrun: needs GEMINI_API_KEY. The OpenAI effort ladder, mirrored, so the
+  // cross-vendor comparison differs in the vendor and nothing else.
+  "gemini-flash":        { ...baseline, provider: "google", model: "gemini-2.5-flash" },
+  "gemini-effort-med":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "medium" },
+  "gemini-effort-low":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "low" },
+  "gemini-no-run-tests": { ...baseline, provider: "google", model: "gemini-2.5-flash",
+                           tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
+  "gemini-lite":         { ...baseline, provider: "google", model: "gemini-2.5-flash-lite" },
 };
 ```
 
@@ -919,20 +999,22 @@ The end-to-end fake proves the loop. It proves nothing about the adapters, which
 | `anthropic.usage.test.ts` | Normalised totals from `recorded/anthropic-turn2.json`. Specifically that `inputTokens` is used as-is and **not** reduced by `cache_read_input_tokens`. |
 | `openai.history.test.ts` | After a tool turn, the session's `input` array contains the turn-1 `reasoning` item, and one `function_call_output` per call as **separate** items. |
 | `anthropic.history.test.ts` | After a tool turn, `messages` ends with **one** user message containing **all** `tool_result` blocks, and the assistant message retains its `thinking` block. |
+| `google.test.ts` | Normalised totals from an inline response: `inputTokens` is `promptTokenCount − cachedContentTokenCount` **and** `outputTokens` is `candidatesTokenCount + thoughtsTokenCount`. Plus `usageArithmeticHolds` on both the documented shape and the disputed one. |
+| `google.history.test.ts` | After a tool turn, `contents` ends with **one** user `Content` carrying **all** `functionResponse` parts, and the turn-1 model `Content` is replayed with its `thoughtSignature` verbatim. Drives the real adapter with `@google/genai` mocked — legal only under `src/provider/`. |
 | `stop.test.ts` | Every row of the §5.3 stop-mapping table, both directions. |
-| `cost.test.ts` | `costUsd` throws on an unknown model; a known model matches a hand-computed figure. |
+| `cost.test.ts` | `costUsd` throws on an unknown model; a known model of each vendor matches a hand-computed figure; `gpt-5.6` and `gemini-2.5-pro` are absent. |
 
-These are table-driven and fast, and they are the reason both adapters can be trusted without a key. Neither `recorded/openai-turn2.json` nor `recorded/anthropic-turn2.json` is a live capture — no `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` exists in this environment, so both are hand-written fixtures standing in until a key exists. Replacing them with real captures (`npm run record` for OpenAI) is the first task once a key is available. Each file's own `_comment` says so; the README says so too.
+These are table-driven and fast, and they are the reason all three adapters can be trusted without a key. The Google tests carry their responses inline rather than in `recorded/` — a hand-written file in a directory named `recorded/` is the more misleading of the two options. Neither `recorded/openai-turn2.json` nor `recorded/anthropic-turn2.json` is a live capture — no `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` exists in this environment, so both are hand-written fixtures standing in until a key exists. Replacing them with real captures (`npm run record` for OpenAI) is the first task once a key is available. Each file's own `_comment` says so; the README says so too.
 
 ### 11.3 The leak check
 
-One grep, run by `npm run demo`:
+One regex over every `.ts` outside `src/provider/`, run by `npm run demo` and by `npm run check-leaks`:
 
-```
-grep -rE "from ['\"](openai|@anthropic-ai/sdk)" src --include=*.ts | grep -v "^src/provider/"
+```js
+/\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk|@google\/genai)(?:\/[^"']*)?["']/
 ```
 
-Non-empty output fails the check. This is the cheapest possible guard on the §1.1 rule, and it is the difference between an abstraction and a suggestion.
+A match fails the check, naming the file. It covers every import form that can actually reach an SDK — `from "x"`, bare `import "x"`, dynamic `import("x")`, `require("x")` — and any subpath (`openai/resources`, `@google/genai/types`), because a `from`-only grep missed all but the first. Each vendor added to `PROVIDERS` must be added to this pattern in the same change; it was verified for `@google/genai` by planting a probe import under `src/`, confirming exit 1, and deleting it. This is the cheapest possible guard on the §1.1 rule, and it is the difference between an abstraction and a suggestion.
 
 ### 11.4 Why this is built Saturday, not Sunday
 
@@ -963,6 +1045,8 @@ Vendor-condition mapping is in §5.3 and happens entirely in the adapters. A ven
 |---|---|---|
 | `OPENAI_API_KEY` | — | env. Required whenever a selected variant names `provider: "openai"`. |
 | `ANTHROPIC_API_KEY` | — | env. Required **only** if a selected variant names `provider: "anthropic"`. |
+| `GEMINI_API_KEY` | — | env. Required **only** if a selected variant names `provider: "google"`. |
+| `GEMINI_MIN_INTERVAL_MS` | 6500 | env, Google adapter only. Minimum spacing between request *starts* (~9 RPM), because free-tier Flash is ~10 RPM — below what one worker generates (§5.5). Raise it if AI Studio shows a tighter limit for the account; lower it on a paid tier. |
 | `--variant` | `baseline` | CLI, repeatable |
 | `--reps` | 3 | CLI |
 | `--tasks` | all | CLI, repeatable. **Exact fixture-id match**, not a glob: `loadFixtures` keeps a directory only if `--tasks` lists its id verbatim (`--tasks 003-swapped-args`). No fixture id matching any value is a hard error, so a typo cannot quietly sweep nothing. |
@@ -975,11 +1059,19 @@ Vendor-condition mapping is in §5.3 and happens entirely in the adapters. A ven
 Key checks happen at variant-selection time, before the first fixture is copied — and now before `openStore`, so a sweep that cannot run leaves no empty `eval.db` (plus WAL) behind. Together with a `costUsd(model, zeroUsage())` price preflight, everything that can refuse the sweep refuses it before the first token is bought:
 
 ```ts
+const KEY_ENV: Record<ProviderId, string> = {
+  openai:    "OPENAI_API_KEY",
+  anthropic: "ANTHROPIC_API_KEY",
+  google:    "GEMINI_API_KEY",
+};
+
 function requireKey(p: ProviderId) {
-  const k = p === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
+  const k = KEY_ENV[p];
   if (!process.env[k]) throw new Error(`${k} is not set, required by a selected variant`);
 }
 ```
+
+A table, not a ternary. The `p === "openai" ? … : ANTHROPIC_API_KEY` this replaced would have demanded `ANTHROPIC_API_KEY` for a Google variant — a startup failure naming a key you do not need, which reads as a harness bug rather than a missing credential. `Record<ProviderId, string>` makes the *next* provider a compile error instead.
 
 There is no `--provider` flag. Provider is a property of a variant, not of an invocation; a flag would let you run `baseline` against a vendor it was never defined for, and silently make two rows in the database incomparable.
 

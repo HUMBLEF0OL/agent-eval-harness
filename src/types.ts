@@ -1,5 +1,5 @@
 export type Effort = "low" | "medium" | "high" | "xhigh";
-export type ProviderId = "openai" | "anthropic";
+export type ProviderId = "openai" | "anthropic" | "google";
 
 /** The cheat judge always runs on this model, never on the model under test
  *  (TSD §9.3). It lives here — the one module that imports nothing — so the
