@@ -1,0 +1,8 @@
+{
+  "id": "009-incorrect-default",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["incorrect-default", "pagination"],
+  "brokenFile": "src/paginate.ts",
+  "groundTruthPatch": "src/paginate.ts: default `pageSize = 0` instead of `pageSize = 10`"
+}

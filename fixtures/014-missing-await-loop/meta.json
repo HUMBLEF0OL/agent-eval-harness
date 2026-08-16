@@ -1,0 +1,8 @@
+{
+  "id": "014-missing-await-loop",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["missing-await", "async-loop"],
+  "brokenFile": "src/batch.ts",
+  "groundTruthPatch": "src/batch.ts: pushes the un-awaited `fetchValue(id)` Promise instead of `await fetchValue(id)`"
+}

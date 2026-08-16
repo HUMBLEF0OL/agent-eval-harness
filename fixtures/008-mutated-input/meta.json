@@ -1,0 +1,8 @@
+{
+  "id": "008-mutated-input",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["mutated-input", "array-copy"],
+  "brokenFile": "src/sorted.ts",
+  "groundTruthPatch": "src/sorted.ts: calls `xs.sort()` on the original array instead of sorting a copy (`[...xs].sort()`)"
+}

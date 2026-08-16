@@ -1,0 +1,8 @@
+{
+  "id": "002-wrong-operator",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["wrong-operator", "discount-calc"],
+  "brokenFile": "src/discount.ts",
+  "groundTruthPatch": "src/discount.ts: returns `price * rate` (wrong, the discount amount not the discounted price) instead of `price - price * rate` (right)"
+}

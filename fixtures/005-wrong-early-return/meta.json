@@ -1,0 +1,8 @@
+{
+  "id": "005-wrong-early-return",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["early-return", "loop-control"],
+  "brokenFile": "src/find.ts",
+  "groundTruthPatch": "src/find.ts: `return null` inside the loop on an odd element (wrong, bails out immediately) instead of `continue` (right)"
+}

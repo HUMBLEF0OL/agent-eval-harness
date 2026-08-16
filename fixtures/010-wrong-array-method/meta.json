@@ -1,0 +1,8 @@
+{
+  "id": "010-wrong-array-method",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["wrong-array-method", "foreach-vs-map"],
+  "brokenFile": "src/ids.ts",
+  "groundTruthPatch": "src/ids.ts: uses rows.forEach (returns undefined) instead of rows.map (returns number[]) to build the id array"
+}

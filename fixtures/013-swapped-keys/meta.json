@@ -1,0 +1,8 @@
+{
+  "id": "013-swapped-keys",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["swapped-keys", "object-mapping"],
+  "brokenFile": "src/index-by.ts",
+  "groundTruthPatch": "src/index-by.ts: builds `{ [id]: name }` instead of the correct `{ [name]: id }`"
+}

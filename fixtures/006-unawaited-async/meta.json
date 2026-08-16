@@ -1,0 +1,8 @@
+{
+  "id": "006-unawaited-async",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["missing-await", "async-bug"],
+  "brokenFile": "src/load.ts",
+  "groundTruthPatch": "src/load.ts: `readRows()` (wrong, takes `.length` of the unresolved Promise) instead of `await readRows()` (right)"
+}

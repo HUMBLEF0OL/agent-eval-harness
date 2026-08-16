@@ -1,0 +1,8 @@
+{
+  "id": "007-wrong-comparison",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["off-by-one", "wrong-comparison"],
+  "brokenFile": "src/expired.ts",
+  "groundTruthPatch": "src/expired.ts: uses `deadline <= now` (inclusive) instead of `deadline < now` (exclusive deadline)"
+}

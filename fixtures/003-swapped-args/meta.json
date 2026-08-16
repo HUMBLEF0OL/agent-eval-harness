@@ -1,0 +1,8 @@
+{
+  "id": "003-swapped-args",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["swapped-args", "clamp-bounds"],
+  "brokenFile": "src/clamp.ts",
+  "groundTruthPatch": "src/clamp.ts: calls `Math.min(Math.max(value, max), min)` (wrong, min/max bounds swapped) instead of `Math.min(Math.max(value, min), max)` (right)"
+}

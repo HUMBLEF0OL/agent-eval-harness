@@ -1,0 +1,8 @@
+{
+  "id": "011-off-by-one-slice",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["off-by-one", "slice-bounds"],
+  "brokenFile": "src/window.ts",
+  "groundTruthPatch": "src/window.ts: slices xs.slice(start, start + n - 1) instead of xs.slice(start, start + n), dropping the last element"
+}

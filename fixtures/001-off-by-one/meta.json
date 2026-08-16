@@ -1,0 +1,8 @@
+{
+  "id": "001-off-by-one",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "easy",
+  "tags": ["off-by-one", "loop-bound"],
+  "brokenFile": "src/sum.ts",
+  "groundTruthPatch": "src/sum.ts: loop condition uses `i <= n` (wrong, reads one past the first n elements) instead of `i < n` (right)"
+}
