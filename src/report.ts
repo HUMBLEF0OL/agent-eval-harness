@@ -1,4 +1,5 @@
 import * as fs from "node:fs";
+import { JUDGE_MODEL } from "./runner.js";
 import { openStore, type RunRow } from "./store.js";
 
 /** Deterministic PRNG so a report regenerated from the same DB is byte-identical. */
@@ -33,6 +34,8 @@ export interface VariantSummary {
   tamperRate: number; refusals: number; errors: number;
   meanCost: number; meanSteps: number; meanReasoning: number;
   stopCounts: Record<string, number>;
+  /** null when the judge (stretch, opt-in --judge) never ran for this variant. */
+  sourceCheatRate: number | null;
 }
 
 export function summarise(runs: RunRow[]): VariantSummary[] {
@@ -58,6 +61,10 @@ export function summarise(runs: RunRow[]): VariantSummary[] {
       meanSteps: mean(rs.map(r => r.steps ?? 0)),
       meanReasoning: mean(rs.map(r => r.reasoningTokens)),
       stopCounts,
+      sourceCheatRate: (() => {
+        const judged = rs.filter(r => r.sourceCheat !== null);
+        return judged.length ? mean(judged.map(r => r.sourceCheat!)) : null;
+      })(),
     };
   }).sort((a, b) => a.variant.localeCompare(b.variant));
 }
@@ -87,6 +94,7 @@ export function buildReport(dbPath: string, outPath: string): void {
   const providers = [...new Set(runs.map(r => r.provider))];
   store.close();
 
+  const judgeRan = rows.some(r => r.sourceCheatRate !== null);
   const table = rows.map(r => `<tr>
     <td>${esc(r.variant)}</td><td>${esc(r.provider)}/${esc(r.model)}</td><td>${esc(r.effort)}</td>
     <td>${(r.passRate * 100).toFixed(0)}%</td>
@@ -96,6 +104,7 @@ export function buildReport(dbPath: string, outPath: string): void {
     <td>${Math.round(r.meanReasoning)}</td>
     <td>$${r.meanCost.toFixed(4)}</td>
     <td>${r.refusals}/${r.errors}</td>
+    ${judgeRan ? `<td>${r.sourceCheatRate === null ? "—" : (r.sourceCheatRate * 100).toFixed(0) + "%"}</td>` : ""}
   </tr>`).join("");
 
   const html = `<!doctype html><meta charset="utf-8"><title>Agent Eval Harness</title>
@@ -115,11 +124,17 @@ ${providers.length === 1
 ${barChart(rows)}
 <table>
  <tr><th>Variant</th><th>Model</th><th>Effort</th><th>Pass</th><th>95% CI</th><th>Tamper</th>
-     <th>Steps</th><th>Reasoning tok</th><th>Cost/run</th><th>Refus/Err</th></tr>
+     <th>Steps</th><th>Reasoning tok</th><th>Cost/run</th><th>Refus/Err</th>${judgeRan ? "<th>Source cheat</th>" : ""}</tr>
  ${table}
 </table>
 <p><small>Refusals and harness errors are excluded from pass-rate denominators and shown
-separately. Cost is computed from actual usage fields, not estimated.</small></p>`;
+separately. Cost is computed from actual usage fields, not estimated.</small></p>
+${judgeRan
+  ? `<p class="note">Source cheat rate is the LLM judge's (stretch, opt-in <code>--judge</code>)
+     verdict that a passing patch games the specific test — hardcodes, special-cases, or mocks
+     the unit under test — rather than fixing the general behaviour. Judged by
+     <strong>${esc(JUDGE_MODEL)}</strong>, a model distinct from every model under test.</p>`
+  : ""}`;
 
   fs.writeFileSync(outPath, html, "utf8");
   console.log(`wrote ${outPath} (${rows.length} variants, ${runs.length} runs)`);

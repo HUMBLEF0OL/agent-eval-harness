@@ -119,6 +119,15 @@ class AnthropicSession implements Session {
 export const anthropicProvider: Provider = {
   id: "anthropic",
   start: (cfg, task) => new AnthropicSession(cfg, task),
+  async complete(cfg, prompt, schema) {
+    const res = await client().messages.create({
+      model: cfg.model,
+      max_tokens: 2000,
+      output_config: { effort: "low", format: { type: "json_schema", schema } },
+      messages: [{ role: "user", content: prompt }],
+    } as any) as Res;
+    return JSON.parse(textOf(res));
+  },
   async prewarm(cfg) {
     const res = await client().messages.create({
       model: cfg.model,

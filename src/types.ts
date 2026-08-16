@@ -60,6 +60,8 @@ export interface Provider {
   readonly id: ProviderId;
   start(cfg: SessionConfig, task: string): Session;
   prewarm(cfg: SessionConfig): Promise<UsageTotals>;
+  /** One-shot structured completion. Used only by the cheat judge (TSD §9.3). */
+  complete(cfg: SessionConfig, prompt: string, schema: object): Promise<unknown>;
 }
 
 export type EventType =

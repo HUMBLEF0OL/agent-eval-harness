@@ -30,6 +30,7 @@ export function makeFakeProvider(script: ScriptedStep[]): FakeProvider {
       };
     },
     async prewarm() { return p.prewarmUsage; },
+    async complete() { throw new Error("not implemented in the fake provider"); },
   };
   return p;
 }

@@ -10,6 +10,7 @@ const { values } = parseArgs({
     "keep-temp": { type: "boolean", default: false },
     db:          { type: "string", default: "./eval.db" },
     "max-steps": { type: "string", default: "30" },
+    judge:       { type: "boolean", default: false },
   },
 });
 
@@ -21,4 +22,5 @@ await runSweep({
   keepTemp: values["keep-temp"]!,
   db: values.db!,
   maxSteps: Number(values["max-steps"]),
+  judge: values.judge!,
 });

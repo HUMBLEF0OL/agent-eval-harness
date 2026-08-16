@@ -117,6 +117,17 @@ class OpenAISession implements Session {
 export const openaiProvider: Provider = {
   id: "openai",
   start: (cfg, task) => new OpenAISession(cfg, task),
+  async complete(cfg, prompt, schema) {
+    const res = await client.responses.create({
+      model: cfg.model,
+      reasoning: { effort: "low" },
+      max_output_tokens: 2000,
+      store: false,
+      input: prompt,
+      text: { format: { type: "json_schema", name: "verdict", schema, strict: true } },
+    } as any) as Res;
+    return JSON.parse(textOf(res));
+  },
   async prewarm(cfg) {
     const res = await client.responses.create({
       model: cfg.model,
