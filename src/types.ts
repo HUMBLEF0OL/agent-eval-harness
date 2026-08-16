@@ -1,6 +1,12 @@
 export type Effort = "low" | "medium" | "high" | "xhigh";
 export type ProviderId = "openai" | "anthropic";
 
+/** The cheat judge always runs on this model, never on the model under test
+ *  (TSD §9.3). It lives here — the one module that imports nothing — so the
+ *  runner and the report can agree on it without the report pulling the
+ *  provider registry, and with it both vendor SDKs, into its import graph. */
+export const JUDGE_MODEL = "gpt-5-nano";
+
 export interface ToolSpec {
   name: string;
   description: string;
@@ -60,8 +66,11 @@ export interface Provider {
   readonly id: ProviderId;
   start(cfg: SessionConfig, task: string): Session;
   prewarm(cfg: SessionConfig): Promise<UsageTotals>;
-  /** One-shot structured completion. Used only by the cheat judge (TSD §9.3). */
-  complete(cfg: SessionConfig, prompt: string, schema: object): Promise<unknown>;
+  /** One-shot structured completion. Used only by the cheat judge (TSD §9.3).
+   *  Returns usage alongside the parsed value: this call is billed, and spend
+   *  the harness cannot see is spend it reports wrongly. */
+  complete(cfg: SessionConfig, prompt: string, schema: object):
+    Promise<{ value: unknown; usage: UsageTotals }>;
 }
 
 export type EventType =

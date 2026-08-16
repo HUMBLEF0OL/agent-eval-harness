@@ -126,7 +126,7 @@ export const openaiProvider: Provider = {
       input: prompt,
       text: { format: { type: "json_schema", name: "verdict", schema, strict: true } },
     } as any) as Res;
-    return JSON.parse(textOf(res));
+    return { value: JSON.parse(textOf(res)), usage: normaliseUsage(res) };
   },
   async prewarm(cfg) {
     const res = await client.responses.create({

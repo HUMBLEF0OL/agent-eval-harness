@@ -13,7 +13,7 @@ no headline number in this README, because inventing one would be worse than hav
 
 What *is* verified, end-to-end, with zero API calls:
 
-    npm run demo             # scripted provider, all 76 unit tests, leak check — zero tokens
+    npm run demo             # scripted provider end-to-end, plus the leak check — zero tokens
     npm run verify-fixtures  # all 15 fixtures fail before the fix and pass after it
 
 Both are green right now (`npx vitest run`, `npx tsc --noEmit`, and `npm run check-leaks`

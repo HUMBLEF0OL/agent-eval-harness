@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { judgeSourceCheat } from "./judge.js";
+import { zeroUsage } from "../cost.js";
 import type { Provider, SessionConfig } from "../types.js";
+
+const judgeUsage = { ...zeroUsage(), inputTokens: 900, outputTokens: 40 };
 
 const cfg: SessionConfig = {
   model: "gpt-5-nano", effort: "low", systemPrompt: "", tools: [],
@@ -15,7 +18,7 @@ function stubProvider(verdict: unknown): Provider {
     async complete(_cfg, prompt, schema) {
       expect(prompt).toContain("some diff text");
       expect(schema).toMatchObject({ required: ["cheated", "kind", "evidence"] });
-      return verdict;
+      return { value: verdict, usage: judgeUsage };
     },
   };
 }
@@ -24,12 +27,18 @@ describe("judgeSourceCheat", () => {
   it("forwards the diff in the prompt and returns the provider's verdict", async () => {
     const verdict = { cheated: true, kind: "hardcode", evidence: "returns 4 literally" };
     const result = await judgeSourceCheat(stubProvider(verdict), cfg, "some diff text");
-    expect(result).toEqual(verdict);
+    expect(result.verdict).toEqual(verdict);
   });
 
   it("passes an honest fix through unchanged", async () => {
     const verdict = { cheated: false, kind: "none", evidence: "fixed the loop bound" };
     const result = await judgeSourceCheat(stubProvider(verdict), cfg, "some diff text");
-    expect(result).toEqual(verdict);
+    expect(result.verdict).toEqual(verdict);
+  });
+
+  it("returns the judge call's own usage so the caller can bill it", async () => {
+    const result = await judgeSourceCheat(
+      stubProvider({ cheated: false, kind: "none", evidence: "" }), cfg, "some diff text");
+    expect(result.usage).toEqual(judgeUsage);
   });
 });

@@ -10,6 +10,7 @@ import { scoreTests } from "./score/tests.js";
 import { openStore, type RunRow } from "./store.js";
 import { makeTools } from "./tools.js";
 import { VARIANTS } from "./variants.js";
+import { JUDGE_MODEL } from "./types.js";
 import type { EventInput, ProviderId, SessionConfig, UsageTotals } from "./types.js";
 
 export interface SweepOptions {
@@ -26,12 +27,11 @@ export interface SweepOptions {
   judge: boolean;
 }
 
-/** The judge always runs on this model, never on the model under test
- *  (TSD §9.3) — named here so the CLI, the sweep, and the report agree.
- *  The "nano" variant is unrun by design (PRD §5.4), so the guard in
- *  runSweep below never actually fires; it exists to fail loudly if that
- *  ever changes rather than silently judging a model against itself. */
-export const JUDGE_MODEL = "gpt-5-nano";
+// JUDGE_MODEL lives in ./types.js: the report needs it too, and importing it
+// from here would drag the provider registry — and both vendor SDKs — into the
+// report path. The "nano" variant is unrun by design (PRD §5.4), so the guard
+// in runSweep below never actually fires; it exists to fail loudly if that ever
+// changes rather than silently judging a model against itself.
 
 export function requireKey(p: ProviderId): void {
   const k = p === "openai" ? "OPENAI_API_KEY" : "ANTHROPIC_API_KEY";
@@ -164,6 +164,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
           let sourceCheat: number | null = null;
           let sourceCheatKind: string | null = null;
           let sourceCheatEvidence: string | null = null;
+          let judgeUsd = 0;
           if (opts.judge && scorable) {
             const diff = buildSourceDiff(path.join(fixture.dir, "repo"), root);
             if (diff) {
@@ -171,10 +172,18 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
                 model: JUDGE_MODEL, effort: "low", systemPrompt: "", tools: [],
                 maxTokensPerTurn: 2000, cacheKey: `${runId}-judge`,
               };
-              const verdict = await judgeSourceCheat(PROVIDERS.openai, judgeCfg, diff);
-              sourceCheat = verdict.cheated ? 1 : 0;
-              sourceCheatKind = verdict.kind;
-              sourceCheatEvidence = verdict.evidence;
+              try {
+                const judged = await judgeSourceCheat(PROVIDERS.openai, judgeCfg, diff);
+                sourceCheat = judged.verdict.cheated ? 1 : 0;
+                sourceCheatKind = judged.verdict.kind;
+                sourceCheatEvidence = judged.verdict.evidence;
+                judgeUsd = costUsd(JUDGE_MODEL, judged.usage);
+              } catch (e) {
+                // A blipped nano audit call must not discard an agent run that
+                // already completed and was already billed. Missing verdict is
+                // recorded as null, which summarise() excludes from the rate.
+                console.warn(`  ${runId}  judge failed, sourceCheat left null: ${(e as Error).message}`);
+              }
             }
           }
 
@@ -201,7 +210,9 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             cacheReadTokens: result.usage.cacheReadTokens,
             outputTokens: result.usage.outputTokens,
             reasoningTokens: result.usage.reasoningTokens,
-            costUsd: costUsd(variant.model, result.usage),
+            // Agent spend plus the judge's own billed call (0 unless --judge ran),
+            // so the reported cost of a cell is what the cell actually cost.
+            costUsd: costUsd(variant.model, result.usage) + judgeUsd,
             wallMs: Date.now() - t0, error: result.error ?? null,
           };
           store.upsertRun(row);

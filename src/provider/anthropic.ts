@@ -126,7 +126,7 @@ export const anthropicProvider: Provider = {
       output_config: { effort: "low", format: { type: "json_schema", schema } },
       messages: [{ role: "user", content: prompt }],
     } as any) as Res;
-    return JSON.parse(textOf(res));
+    return { value: JSON.parse(textOf(res)), usage: normaliseUsage(res) };
   },
   async prewarm(cfg) {
     const res = await client().messages.create({

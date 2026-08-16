@@ -1,6 +1,10 @@
+import { spawnSync } from "node:child_process";
+import * as fs from "node:fs";
+import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { bootstrapCI, summarise } from "./report.js";
-import type { RunRow } from "./store.js";
+import { HARNESS_ROOT, makeSandbox } from "./sandbox.js";
+import { openStore, type RunRow } from "./store.js";
 
 const run = (over: Partial<RunRow>): RunRow => ({
   id: "x", taskId: "t", variant: "baseline", provider: "openai", model: "gpt-5.6-terra",
@@ -54,4 +58,29 @@ describe("summarise", () => {
   it("groups by variant", () => {
     expect(summarise([run({ id: "1" }), run({ id: "2", variant: "effort-low" })])).toHaveLength(2);
   });
+});
+
+// The unit tests above import buildReport's helpers directly, which is exactly
+// how a broken main-module guard stayed invisible: `npm run report` exited 0 and
+// wrote nothing. This drives the documented CLI instead.
+describe("report entrypoint", () => {
+  it("writes the file when run as `tsx src/report.ts <db> <out>`", () => {
+    const dir = makeSandbox("aeh-report-");
+    try {
+      const db = path.join(dir, "probe.db");
+      const out = path.join(dir, "report.html");
+      const store = openStore(db);
+      store.upsertRun(run({ id: "1" }));
+      store.close();
+
+      const res = spawnSync("npx", ["tsx", "src/report.ts", `"${db}"`, `"${out}"`],
+        { cwd: HARNESS_ROOT, encoding: "utf8", shell: true });
+
+      expect(res.status, res.stderr).toBe(0);
+      expect(fs.existsSync(out), `no file written; stdout: ${res.stdout}`).toBe(true);
+      expect(fs.readFileSync(out, "utf8")).toContain("1 runs across 1 variants");
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 60_000);
 });

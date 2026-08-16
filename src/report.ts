@@ -1,6 +1,9 @@
 import * as fs from "node:fs";
-import { JUDGE_MODEL } from "./runner.js";
+import { pathToFileURL } from "node:url";
 import { openStore, type RunRow } from "./store.js";
+// From ./types.js, not ./runner.js: runner pulls in the provider registry and
+// with it both vendor SDKs, which have no business in the report path.
+import { JUDGE_MODEL } from "./types.js";
 
 /** Deterministic PRNG so a report regenerated from the same DB is byte-identical. */
 function mulberry32(seed: number) {
@@ -133,13 +136,18 @@ ${judgeRan
   ? `<p class="note">Source cheat rate is the LLM judge's (stretch, opt-in <code>--judge</code>)
      verdict that a passing patch games the specific test — hardcodes, special-cases, or mocks
      the unit under test — rather than fixing the general behaviour. Judged by
-     <strong>${esc(JUDGE_MODEL)}</strong>, a model distinct from every model under test.</p>`
+     <strong>${esc(JUDGE_MODEL)}</strong>, a model distinct from every model under test.
+     That judge call is billed: its cost is included in Cost/run above, though its
+     tokens are not in the token columns, which count the agent only.</p>`
   : ""}`;
 
   fs.writeFileSync(outPath, html, "utf8");
   console.log(`wrote ${outPath} (${rows.length} variants, ${runs.length} runs)`);
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+// pathToFileURL, not `file://${argv[1]}`: on Windows argv[1] is a backslash path
+// with no drive-prefix slash and no percent-encoding, so the naive comparison is
+// never true and `npm run report` becomes a silent no-op.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   buildReport(process.argv[2] ?? "./eval.db", process.argv[3] ?? "./report.html");
 }
