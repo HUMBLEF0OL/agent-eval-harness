@@ -25,9 +25,9 @@ How to work:
    the bug.
 3. Read the implementation file the tests exercise. Read it in full before editing.
    write_file replaces the entire file, so you must know the current contents.
-4. Form a specific hypothesis about the defect before changing anything. "The loop bound
-   is inclusive when it should be exclusive" is a hypothesis. "Something is wrong with
-   the loop" is not.
+4. Form a specific hypothesis about the defect before changing anything. "padStart is
+   receiving the number of pad characters where it expects the total target width" is a
+   hypothesis. "Something is wrong with the formatting" is not.
 5. Make the smallest change that repairs the defect. Do not refactor, do not rename, do
    not add features, do not reformat surrounding code.
 6. Call run_tests to confirm the change worked. If the suite still fails, read the
