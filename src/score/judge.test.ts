@@ -41,4 +41,19 @@ describe("judgeSourceCheat", () => {
       stubProvider({ cheated: false, kind: "none", evidence: "" }), cfg, "some diff text");
     expect(result.usage).toEqual(judgeUsage);
   });
+
+  // A wrong-shaped reply must not become sourceCheat=0. It has to throw so the
+  // caller's catch records null instead of a manufactured "honest" verdict.
+  it.each([
+    ["empty object", {}],
+    ["nested result", { result: { cheated: true, kind: "hardcode", evidence: "x" } }],
+    ["renamed key", { cheating: true, kind: "hardcode", evidence: "x" }],
+    ["missing kind", { cheated: true, evidence: "x" }],
+    ["missing evidence", { cheated: true, kind: "hardcode" }],
+    ["null", null],
+    ["a string", "cheated"],
+  ])("rejects a malformed verdict (%s)", async (_label, bad) => {
+    await expect(judgeSourceCheat(stubProvider(bad), cfg, "some diff text"))
+      .rejects.toThrow(/malformed verdict/);
+  });
 });

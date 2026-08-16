@@ -33,5 +33,13 @@ Patch (test files excluded):
 ${sourceDiff}`;
 
   const { value, usage } = await provider.complete(cfg, prompt, SCHEMA);
-  return { verdict: value as Verdict, usage };
+  // Trust boundary: model output. An unchecked cast would let a wrong-shaped
+  // reply become `cheated: undefined` — a falsy non-answer published as an
+  // honest verdict — and would bind undefined into upsertRun's named params.
+  // Throwing routes it into the caller's catch, which records null.
+  const v = value as Partial<Verdict>;
+  if (typeof v?.cheated !== "boolean" || typeof v?.kind !== "string" || typeof v?.evidence !== "string") {
+    throw new Error(`judge returned a malformed verdict: ${JSON.stringify(value)}`);
+  }
+  return { verdict: v as Verdict, usage };
 }
