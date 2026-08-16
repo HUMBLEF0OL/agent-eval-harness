@@ -70,7 +70,7 @@ The one place complexity genuinely increases is token accounting (§5), because 
 | `src/report.ts` | SQLite → self-contained `report.html`. |
 | `src/demo.ts` | Zero-token end-to-end self-check with a scripted fake provider. |
 | `fixtures/*/` | Task definitions and broken repos. |
-| `recorded/` | One captured real API response per vendor, used by the accounting tests. Committed. |
+| `recorded/` | One fixture response per vendor, used by the accounting tests. Both are hand-written, not live captures (§11.2). Committed. |
 
 Deliberately flat. No `core/`, no `lib/`, no dependency-injection container, no provider registry beyond a plain object literal. Modules talk through plain function calls and typed records.
 
@@ -911,7 +911,7 @@ A second scripted sequence that deletes the test file asserts `tampered = 1` and
 
 ### 11.2 Adapter tests against recorded responses
 
-The end-to-end fake proves the loop. It proves nothing about the adapters, which is where the money is. So each adapter gets a unit test driven by a **real response captured once and committed** to `recorded/`:
+The end-to-end fake proves the loop. It proves nothing about the adapters, which is where the money is. So each adapter gets a unit test driven by a **fixture response committed** to `recorded/`:
 
 | Test | Asserts |
 |---|---|
@@ -922,7 +922,7 @@ The end-to-end fake proves the loop. It proves nothing about the adapters, which
 | `stop.test.ts` | Every row of the §5.3 stop-mapping table, both directions. |
 | `cost.test.ts` | `costUsd` throws on an unknown model; a known model matches a hand-computed figure. |
 
-These are table-driven and fast, and they are the reason the Anthropic adapter can be trusted without a key. Capturing the two recorded responses is the only step in the whole build that needs live credentials for a vendor — and for Anthropic it is deferred, with a hand-written fixture transcribed from the SDK's own types standing in until a key exists. The test file says so in a comment; the README says so too.
+These are table-driven and fast, and they are the reason both adapters can be trusted without a key. Neither `recorded/openai-turn2.json` nor `recorded/anthropic-turn2.json` is a live capture — no `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` exists in this environment, so both are hand-written fixtures standing in until a key exists. Replacing them with real captures (`npm run record` for OpenAI) is the first task once a key is available. Each file's own `_comment` says so; the README says so too.
 
 ### 11.3 The leak check
 
