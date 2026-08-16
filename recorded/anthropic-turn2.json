@@ -1,0 +1,18 @@
+{
+  "_comment": "HAND-WRITTEN, not captured. No ANTHROPIC_API_KEY exists (PRD §8). Transcribed from the SDK's Anthropic.Message type. Replace with a real capture the day a key appears; the assertions below should hold unchanged.",
+  "id": "msg_01HandWritten",
+  "type": "message",
+  "role": "assistant",
+  "model": "claude-sonnet-5",
+  "stop_reason": "tool_use",
+  "content": [
+    { "type": "thinking", "thinking": "I should read the file first.", "signature": "PLACEHOLDER_SIGNATURE" },
+    { "type": "tool_use", "id": "toolu_01Abc", "name": "read_file", "input": { "path": "src/sum.ts" } }
+  ],
+  "usage": {
+    "input_tokens": 904,
+    "cache_creation_input_tokens": 0,
+    "cache_read_input_tokens": 4096,
+    "output_tokens": 900
+  }
+}
