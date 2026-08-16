@@ -2,11 +2,16 @@ import * as fs from "node:fs";
 import { openaiProvider } from "../src/provider/openai.js";
 import { ALL_TOOLS } from "../src/tools.js";
 import type { SessionConfig } from "../src/types.js";
+import { SYSTEM_PROMPT } from "../src/variants.js";
 
 const cfg: SessionConfig = {
   model: "gpt-5-nano",
   effort: "low",
-  systemPrompt: "You are a coding agent. Use the tools to inspect and fix the project.",
+  // The real SYSTEM_PROMPT, not a short throwaway: OpenAI only caches a prefix of
+  // 1024+ tokens, so a stub prompt records cacheReadTokens 0 and makes the recorded
+  // regression test vacuous — it would hold whether the cached subtraction in
+  // normaliseUsage is present, doubled, or inverted.
+  systemPrompt: SYSTEM_PROMPT,
   tools: ALL_TOOLS,
   maxTokensPerTurn: 512,
   cacheKey: "record-fixture",

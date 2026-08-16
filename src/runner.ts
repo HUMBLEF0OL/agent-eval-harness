@@ -152,18 +152,26 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
   const pristine = new Map(fixtures.map(f =>
     [f.id, hashGuardedFiles(path.join(f.dir, "repo"))]));
 
+  // Pre-warm every selected variant BEFORE opening the store. Pre-warm is the last
+  // gate that can refuse a sweep — a revoked key, an exhausted quota, a cacheable
+  // prefix under the 1024-token floor — so it belongs with the other startup checks.
+  // Opening the store first meant a sweep that never ran still left an empty eval.db
+  // and its WAL files on disk, which `npm run report` would happily read as 0 runs.
+  const warmed = [];
+  for (const { name, variant, provider } of selected) {
+    const cfg: LoopConfig = {
+      model: variant.model, effort: variant.effort, systemPrompt: variant.systemPrompt,
+      tools: variant.tools, maxTokensPerTurn: 16000, cacheKey: name, maxSteps: opts.maxSteps,
+    };
+    console.log(`[${name}] pre-warming cache…`);
+    assertPrefixLongEnough(name, await provider.prewarm(cfg));   // strictly before fan-out
+    warmed.push({ name, variant, provider, cfg });
+  }
+
   const store = openStore(opts.db);
 
   try {
-    for (const { name, variant, provider } of selected) {
-      const cfg: LoopConfig = {
-        model: variant.model, effort: variant.effort, systemPrompt: variant.systemPrompt,
-        tools: variant.tools, maxTokensPerTurn: 16000, cacheKey: name, maxSteps: opts.maxSteps,
-      };
-
-      console.log(`[${name}] pre-warming cache…`);
-      assertPrefixLongEnough(name, await provider.prewarm(cfg));   // strictly before fan-out
-
+    for (const { name, variant, provider, cfg } of warmed) {
       const cells = fixtures.flatMap(f =>
         Array.from({ length: opts.reps }, (_, rep) => ({ fixture: f, rep })));
       let cacheChecked = false;
