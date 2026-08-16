@@ -1,6 +1,6 @@
-import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { runVitest } from "./sandbox.js";
 import type { ToolHandlers, ToolOutput, ToolSpec } from "./types.js";
 
 export class ToolError extends Error {}
@@ -98,13 +98,11 @@ export function makeTools(root: string): ToolHandlers {
         return { content: `wrote ${input["path"]}` };
       }
       case "run_tests": {
-        // shell:true is required for `npx` resolution on Windows.
-        const r = spawnSync("npx", ["vitest", "run", "--reporter=basic"], {
-          cwd: root, encoding: "utf8", timeout: 60_000, shell: true,
-        });
+        const r = runVitest(root, 60_000);
         return {
           content: [
             `exit code: ${r.status ?? "timeout"}`,
+            ...(r.error ? [`spawn error: ${r.error.message}`] : []),
             truncate(r.stdout ?? "", 4096),
             truncate(r.stderr ?? "", 2048),
           ].join("\n"),
