@@ -150,3 +150,7 @@ eval.db-journal
 smoke.db
 node_modules/
 .aeh-tmp/
+eval-hard.db
+eval-hard.db-wal
+eval-hard.db-shm
+report-hard.html
