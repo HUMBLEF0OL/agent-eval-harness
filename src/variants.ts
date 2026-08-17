@@ -116,5 +116,7 @@ export const VARIANTS: Record<string, Variant> = {
   "gemini-effort-low":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "low" },
   "gemini-no-run-tests": { ...baseline, provider: "google", model: "gemini-2.5-flash",
                            tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
-  "gemini-lite":         { ...baseline, provider: "google", model: "gemini-2.5-flash-lite" },
+  // 3.5-flash-lite, not 2.5: the 2.5 lite model 404s on a new API key
+  // ("no longer available to new users"), verified live 2026-08-17.
+  "gemini-lite":         { ...baseline, provider: "google", model: "gemini-3.5-flash-lite" },
 };

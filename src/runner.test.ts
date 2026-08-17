@@ -37,7 +37,7 @@ describe("cacheFloor", () => {
   it("defaults to 1024 plus margin", () => {
     expect(cacheFloor({ model: "gpt-5.6-terra" })).toBe(1100);
     expect(cacheFloor({ model: "gemini-2.5-flash" })).toBe(1100);
-    expect(cacheFloor({ model: "gemini-2.5-flash-lite" })).toBe(1100);
+    expect(cacheFloor({ model: "gemini-3.5-flash-lite" })).toBe(1100);
   });
 
   it("raises the floor for models whose caching minimum is higher", () => {

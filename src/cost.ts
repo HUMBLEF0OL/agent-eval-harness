@@ -15,8 +15,13 @@ export const PRICES: Record<string, Price> = {
   // paid text tier, on 2026-08-16. Third-party aggregators listed DIFFERENT
   // numbers for both models; the vendor page wins. `gemini-2.5-pro` is absent
   // for the same reason `gpt-5.6` is — its pricing was not verified here.
+  // Only models REACHABLE with a new API key are listed. `models.list()` still
+  // advertises `gemini-2.5-flash-lite`, but calling it returns 404 "no longer
+  // available to new users" (verified live, 2026-08-17) — a price row for an
+  // unreachable model is an invitation to configure a variant that cannot run.
   "gemini-2.5-flash":      { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
-  "gemini-2.5-flash-lite": { provider: "google", in: 0.10, cached: 0.01, out: 0.40 },
+  "gemini-3.5-flash-lite": { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
+  "gemini-3.5-flash":      { provider: "google", in: 1.50, cached: 0.15, out: 9.00 },
 };
 
 export function zeroUsage(): UsageTotals {
