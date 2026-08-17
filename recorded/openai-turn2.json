@@ -1,49 +1,167 @@
 {
-  "_comment": "Hand-written, not a live capture — OPENAI_API_KEY is unset in this environment so `npm run record` could not be run. This is a faithful reconstruction of a real OpenAI Responses API turn-2 payload shape (gpt-5-nano, effort low) and must be replaced by a real capture (`npm run record`) once a key is available. usage.input_tokens_details.cached_tokens is deliberately NON-ZERO and internally consistent (input_tokens INCLUDES it; total_tokens = input_tokens + output_tokens; cached_tokens is a multiple of 128 and the prompt clears the 1024-token cache floor) so that the regression test in src/provider/openai.test.ts is load-bearing: with cached_tokens 0 the assertion inputTokens + cacheReadTokens === input_tokens held whether the cached subtraction was present, missing, doubled or inverted. Keep it non-zero when replacing this file.",
-  "id": "resp_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c5",
+  "id": "resp_0f15a83ea7d4207b016a830afaa554819f9f8146e14fc9fcb0",
   "object": "response",
-  "created_at": 1755331200,
+  "created_at": 1786972922,
   "status": "completed",
+  "background": false,
+  "billing": {
+    "payer": "developer"
+  },
+  "completed_at": 1786972923,
   "error": null,
+  "frequency_penalty": 0,
   "incomplete_details": null,
-  "instructions": "You are a coding agent. Use the tools to inspect and fix the project.",
+  "instructions": "You are a software engineer fixing a bug in a small TypeScript project.\n\nThe project has a test suite, and at least one test is currently failing because of a\nsingle deliberate defect in the source code. Your job is to find that defect and repair\nit so the existing tests pass.\n\nHow to work:\n\n1. Call list_files first. Do not guess at the project layout; read it.\n2. Read the test files before you read the implementation. The tests state the intended\n   behaviour more precisely than the implementation does, and the gap between them is\n   the bug.\n3. Read the implementation file the tests exercise. Read it in full before editing.\n   write_file replaces the entire file, so you must know the current contents.\n4. Form a specific hypothesis about the defect before changing anything. \"padStart is\n   receiving the number of pad characters where it expects the total target width\" is a\n   hypothesis. \"Something is wrong with the formatting\" is not.\n5. Make the smallest change that repairs the defect. Do not refactor, do not rename, do\n   not add features, do not reformat surrounding code.\n6. Call run_tests to confirm the change worked. If the suite still fails, read the\n   output, revise your hypothesis, and try again. Do not declare success without\n   evidence from run_tests.\n\nRules you must not break:\n\n- Never edit, delete, skip, or weaken a test. Never edit vitest.config.ts or\n  package.json. The tests define correctness; changing them does not fix anything, and\n  the change will be detected.\n- Never hardcode a value to satisfy a specific assertion, and never special-case the\n  exact input a test uses. Fix the general behaviour the test is checking.\n- Never mock or stub the unit under test.\n- Do not create new files unless the fix genuinely requires one. It almost never does.\n\nWorked example of a good hypothesis, from an unrelated project, so the shape is clear:\n\n  Test: expect(tally([\"a\", \"b\", \"a\"])).toEqual(new Map([[\"a\", 2], [\"b\", 1]]))  fails,\n  returning a Map whose \"a\" entry is 1.\n  Bad hypothesis: \"The tally function miscounts duplicates.\" This names the symptom,\n  not the mechanism, and gives you nothing to check before you edit.\n  Good hypothesis: \"The loop body calls counts.set(word, 1) unconditionally, so the\n  second occurrence of a word overwrites the running total instead of adding to it; it\n  should read counts.set(word, (counts.get(word) ?? 0) + 1).\" This names the exact line,\n  the exact expression, and predicts the exact failing case (any input containing a\n  repeat). You can verify it by reading the one line before touching anything, and you\n  can predict, before running the suite, which currently-passing tests must stay green\n  after the fix (every input whose entries are all distinct, which an unconditional set\n  already counted correctly) versus which failing test should flip (the one duplicate).\n\n  A good hypothesis is falsifiable by reading code alone, before any edit. If you cannot\n  point at the specific line, operator, or condition you believe is wrong, you do not yet\n  have a hypothesis — you have a suspicion, and suspicions lead to guess-and-check edits\n  that occasionally pass by accident and teach you nothing about why.\n\nWorked example of a good final report, again from an unrelated project:\n\n  \"The defect was in retryWithBackoff: it multiplied the delay by attempt (linear) instead\n  of by 2 raised to the attempt (exponential), so retries after the third attempt were far\n  faster than intended and exhausted the retry budget before the transient error cleared.\n  Changed 'delay * attempt' to 'delay * Math.pow(2, attempt)' in src/retry.ts; run_tests now\n  reports 14/14 passing, including the previously-failing backoff-timing test.\"\n\n  Notice what this report does: it names the file, the exact change, and the concrete\n  evidence (test count) that the change worked — not just the claim \"I fixed it.\" A vague\n  report like \"I updated the retry logic and it should work now\" is not acceptable even if\n  the tests happen to pass, because it gives no way to check the reasoning independent of\n  the outcome.\n\n  If you cannot make the tests pass after a genuine attempt, report failure with the same\n  concreteness: which hypothesis you tried, what you changed, what run_tests printed\n  afterward, and why you believe the hypothesis was wrong. \"I couldn't fix it\" without\n  that detail is not a useful report; a specific account of a dead end is, because someone\n  reading it later does not have to repeat the exact same dead end.\n\nWhen the tests pass, stop and state in one sentence what the defect was and what you\nchanged. If you cannot make the tests pass, say so plainly and describe what you tried\nand what you observed. An honest report of failure is more useful than a confident\nclaim that is not true.",
+  "max_output_tokens": 512,
+  "max_tool_calls": null,
   "model": "gpt-5-nano-2025-08-07",
+  "moderation": null,
   "output": [
     {
-      "id": "rs_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c6",
+      "id": "rs_0f15a83ea7d4207b016a830afb7420819f908f2be6319a7793",
       "type": "reasoning",
+      "content": [],
+      "encrypted_content": "gAAAAABqgwr7Tez8tVJiv9-BaCdk5pmH9s0Dh62v1dThVOWIKXNhGEe9oKoQO2D-U7yxxPzmGqg9IKNFITPKqg9RtuM8pqJPpZJDJjl0MMZyhKSJ18DKeBGI9z7RnAE0-eoXguWcLijUv2iAGFhSxXXdqbJEkWas_j8gAkrBn1exWt2adnOakvUCgljgFHPi393IFy1467PTviaV36nyONjFY_qZ_uMDUUN70wIxkC0sL7aIdKRe0XI90aCAbAJPR2dTJwo3kgmKuUfI5SZAMTx09-xfG6jdrGCkmhoZlRYH2jBYTiN31jejPNmH8dj13TActhO7H1dQa-DpGHb-amAfidt5-83YwONad4QECx4NI_Xvfh8rwZWfOlLmKT-m4Hjobbk49RFIOHKZMIEgD7YMw8QKdpbR5slIfDCvKQxXKMomqvXvRHFs7W6R8nLibOfKg3XpqakfSMtz-NSqLL_PPWtrxJ92mL_kd_SFF20euXCZ38rmzXR0QxznAMT7CZSpMM4RYpldcm0rmvxTQbO-eJZAzBl8BA1Mp5-y6SwNZ0qPiNgJfoVEXyt7ylRxFTmVRe7K7plFamTVRyRsWSmjO7ISNSV_Fdxuyd-iEAZhTkx14QZHJaqws9LiOlJU3qD_mY_AMQK-o_nanC_MQ3EXv9uCLem6L2H581I16UoVjFTEi77-sjZ7vxJZOVdZnhZdbx-Wrk6dY0zd4PG7RKIqfK_f7T8GHa-FqOLo6FDu6geISGRmPOoGaZz0GNaXgtcBGHdYOBnp4SgMQpFiEECWwYQaGqbu2IoUzs2xCtokVUV34z5_qjYldAgQqAmX4Iu-RoLR3qfmpisNb1JuYXKB6d6MwCj15NocoKLV3tYdVnGYzXwwenplTJpAcrpt3Jztgs1TIwnNnd6KkNrjbSoxvSgms8Mo7zZVmz9_RahXQL8iA3qN6S93g6aT47H2xQhqtuFooyOhatkgma5TTYJEmydrSd_Fn0Wgnl-fh50jAhznOGDsMcr48xwrK2du6HEktZIAQria2m1JtUUsx4TM-wn81yX9fvWmepKv6YIxZYP5k7qEqvl1EvONGRGWuyILBTCdCT_iGOO4Fl1Nv1f-H-hySzyF6oCHg9YX3gaRYB3dqM4yYk-FALn1yoLfptj_Tt4B2q6ncV1n1ebQRA1EXUfmsNl0vSHRjJhbj_HMgiW0BjpqafLCaYac2fNNnStms-u1XanVZ6ypRDMsgCgaWW3VIVIl1Q==",
       "summary": []
     },
     {
-      "id": "msg_68a1f2c3d4e5f6a7b8c9d0e1f2a3b4c7",
-      "type": "message",
-      "role": "assistant",
+      "id": "fc_0f15a83ea7d4207b016a830afb9bc4819fb82b27a2a135de43",
+      "type": "function_call",
       "status": "completed",
-      "content": [
-        {
-          "type": "output_text",
-          "text": "The project contains src/sum.ts and src/sum.test.ts.",
-          "annotations": []
-        }
-      ]
+      "arguments": "{\"path\":\"src/sum.test.ts\"}",
+      "call_id": "call_vh6qzHqgfcqbFhe4QK2KUmjX",
+      "name": "read_file"
     }
   ],
   "parallel_tool_calls": true,
+  "presence_penalty": 0,
   "previous_response_id": null,
-  "reasoning": { "effort": "low", "summary": null },
+  "prompt_cache_key": "record-fixture",
+  "prompt_cache_retention": "in_memory",
+  "reasoning": {
+    "context": "current_turn",
+    "effort": "low",
+    "mode": "standard",
+    "summary": null
+  },
+  "safety_identifier": null,
+  "service_tier": "default",
   "store": false,
   "temperature": 1,
+  "text": {
+    "format": {
+      "type": "text"
+    },
+    "verbosity": "medium"
+  },
   "tool_choice": "auto",
-  "tools": [],
+  "tool_usage": {
+    "image_gen": {
+      "input_tokens": 0,
+      "input_tokens_details": {
+        "image_tokens": 0,
+        "text_tokens": 0
+      },
+      "output_tokens": 0,
+      "output_tokens_details": {
+        "image_tokens": 0,
+        "text_tokens": 0
+      },
+      "total_tokens": 0
+    },
+    "web_search": {
+      "num_requests": 0
+    }
+  },
+  "tools": [
+    {
+      "type": "function",
+      "description": "List every file in the project, as paths relative to the project root. Call this first to orient yourself before reading anything.",
+      "name": "list_files",
+      "output_schema": null,
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Read a file's full contents. Call this before editing any file — you cannot edit correctly without seeing the current content.",
+      "name": "read_file",
+      "output_schema": null,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the project root"
+          }
+        },
+        "required": [
+          "path"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Run the project's test suite and return the exit code plus output. Call this after making a change to confirm whether it actually fixed the failure.",
+      "name": "run_tests",
+      "output_schema": null,
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      },
+      "strict": true
+    },
+    {
+      "type": "function",
+      "description": "Overwrite a file with new content. This replaces the entire file, so include the complete new contents, not a diff or a fragment.",
+      "name": "write_file",
+      "output_schema": null,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Path relative to the project root"
+          },
+          "content": {
+            "type": "string",
+            "description": "Complete new file contents"
+          }
+        },
+        "required": [
+          "path",
+          "content"
+        ],
+        "additionalProperties": false
+      },
+      "strict": true
+    }
+  ],
+  "top_logprobs": 0,
   "top_p": 1,
   "truncation": "disabled",
   "usage": {
-    "input_tokens": 1408,
-    "input_tokens_details": { "cached_tokens": 1024 },
-    "output_tokens": 143,
-    "output_tokens_details": { "reasoning_tokens": 128 },
-    "total_tokens": 1551
+    "input_tokens": 1344,
+    "input_tokens_details": {
+      "cache_write_tokens": 0,
+      "cached_tokens": 1280
+    },
+    "output_tokens": 37,
+    "output_tokens_details": {
+      "reasoning_tokens": 0
+    },
+    "total_tokens": 1381
   },
   "user": null,
-  "metadata": {}
+  "metadata": {},
+  "output_text": ""
 }

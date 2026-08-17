@@ -102,8 +102,12 @@ export const VARIANTS: Record<string, Variant> = {
   "no-run-tests":  { ...baseline, tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
   "effort-medium": { ...baseline, effort: "medium" },
   "effort-low":    { ...baseline, effort: "low" },
-  // unrun: cheap enough to add if budget allows
-  nano:            { ...baseline, model: "gpt-5-nano" },
+  // The cheap arm of the headline experiment. gpt-5-nano is ~50x cheaper per run
+  // than gpt-5.6-terra, which buys the run_tests comparison for cents instead of
+  // dollars; `nano-no-run-tests` is its paired arm and differs ONLY in the toolset.
+  nano:               { ...baseline, model: "gpt-5-nano" },
+  "nano-no-run-tests": { ...baseline, model: "gpt-5-nano",
+                         tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
   // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
   anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
 
