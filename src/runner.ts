@@ -70,6 +70,18 @@ export function cacheFloor(v: Pick<Variant, "model">): number {
  *  that turns a silent 5x cost error into a startup failure (TSD §6.4). */
 export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 1024 + MARGIN): void {
   const prefix = promptTokens(warm);
+  // A zero is NOT a short prompt — it means the pre-warm response carried no usable
+  // usage at all, which no amount of lengthening SYSTEM_PROMPT can fix. Observed live:
+  // a pre-warm returned all-zero usage while the very same request, retried, reported
+  // 1285 prompt tokens. Telling the operator to lengthen a 1285-token prompt sent them
+  // after the wrong bug, so the two cases must not share one message.
+  if (prefix === 0) {
+    throw new Error(
+      `variant ${name}: the pre-warm response carried NO prompt tokens at all ` +
+      `(${JSON.stringify(warm)}). This is a vendor/transport problem, not a short prompt — ` +
+      `do NOT lengthen SYSTEM_PROMPT. Retry; if it persists, log the raw pre-warm response.`,
+    );
+  }
   if (prefix < floor) {
     throw new Error(
       `variant ${name}: cacheable prefix is ${prefix} tokens, below this variant's ${floor}-token ` +

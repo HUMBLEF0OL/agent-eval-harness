@@ -26,6 +26,19 @@ describe("assertPrefixLongEnough", () => {
     }
   });
 
+  it("distinguishes a zero-usage pre-warm from a merely short prompt", () => {
+    // Observed live: a pre-warm returned all-zero usage while the identical request
+    // retried reported 1285 prompt tokens. The old message told the operator to
+    // lengthen SYSTEM_PROMPT, which is the wrong bug and unfixable advice.
+    expect(() => assertPrefixLongEnough("nano", zeroUsage()))
+      .toThrow(/NO prompt tokens at all/);
+    expect(() => assertPrefixLongEnough("nano", zeroUsage()))
+      .toThrow(/do NOT lengthen SYSTEM_PROMPT/);
+    // A genuinely short prompt still gets the lengthen-the-prompt advice.
+    expect(() => assertPrefixLongEnough("nano", { ...zeroUsage(), inputTokens: 800 }))
+      .toThrow(/Lengthen SYSTEM_PROMPT/);
+  });
+
   it("honours a higher per-variant floor and names the floor it missed", () => {
     // 1200 clears the default floor but not Gemini 2.5 Pro's 2048 + margin, which
     // is the whole reason the floor is no longer one hardcoded number.
