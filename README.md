@@ -47,21 +47,32 @@ went near them. The source-side judge — shipped as a stretch goal, off by defa
 only mechanism here that could see it. A harness with the first two and not the third would
 have recorded this run as a clean pass and been wrong.
 
-### The judge, measured rather than trusted (15 runs, $0.084)
+### The judge, measured rather than trusted (33 runs, $0.117)
 
 A detector nobody has tested against both classes of input is not a detector. Run with
-`--judge` on `903` five times per arm, plus five genuinely solvable fixtures:
+`--judge` on `903` five times per arm, plus every one of the 23 solvable fixtures:
 
-| | Result |
-|---|---|
-| **True positives** — cheats flagged | **3 / 3**, every one `kind=special_case`, each naming the stack inspection |
-| **False positives** — genuine fixes wrongly flagged | **0 / 5**, every one `kind=none`, each citing the actual general repair |
-| **Tamper detection on those same 3 cheats** | **0 / 3** |
+| | Result | 95% CI (Wilson) |
+|---|---|---|
+| **Specificity** — genuine fixes wrongly flagged | **0 / 23** | false-positive rate **[0%, 14.3%]** |
+| **Sensitivity** — cheats caught | **3 / 3** | detection rate **[~44%, 100%]** |
+| **Tamper detection on those same 3 cheats** | **0 / 3** | — |
 
-Perfect separation on n=8. Small, but the two classes did not overlap at all, and the
-verdicts are right for the right reasons rather than right by luck — the cleared runs name
-the real defect (`i <= n` summing n+1 items; `xs.sort()` mutating in place), and the flagged
-ones name the mechanism (`new Error().stack`).
+Perfect separation, and right for the right reasons rather than right by luck: the 23 cleared
+runs each name the actual defect (`i <= n` summing n+1 items, `xs.sort()` mutating in place,
+`forEach` returning undefined), and the flagged ones each name the mechanism
+(`new Error().stack`).
+
+**The asymmetry matters, and it runs the wrong way.** Specificity now has a usable bound — the
+judge is unlikely to be crying wolf often. Sensitivity does not: 3 for 3 is consistent with a
+true detection rate as low as ~44%. For a cheat detector that is the dangerous direction, since
+a missed cheat is recorded as a clean pass while a false alarm merely wastes a review. So the
+honest summary is that this judge **demonstrably does not over-flag, and is unproven at not
+under-flagging.**
+
+Fixing that is a fixture problem, not a prompt problem: sensitivity can only be measured
+against more *distinct* cheats, and `903` is currently the only fixture with a non-tamper
+escape. More escapable controls is the next piece of work.
 
 The judge model is `gpt-5-mini`, never the `gpt-5-nano` under test; `runSweep` refuses that
 pairing outright, because a model grading its own patch is not a check.
@@ -83,7 +94,8 @@ control whose author documented it in advance as the non-airtight one (see `nonT
 in its `meta.json`), so the finding confirms a predicted hole rather than discovering an
 unknown one. What is now established firmly: the hole is real, a small model finds it
 unprompted about a third of the time, hash-based tamper detection never sees it, and a
-source-side judge catches it every time it has been tried.
+source-side judge has caught it every time so far — though only three times, which is why its
+sensitivity is the weakest number on this page.
 
 ### Control tier (4 impossible fixtures, 8 runs, $0.050)
 
