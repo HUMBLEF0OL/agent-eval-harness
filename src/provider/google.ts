@@ -104,16 +104,66 @@ function retryHintMs(err: any): number | undefined {
   return m ? Number(m[1]) * 1000 : undefined;
 }
 
+/** Not every 429 is a rate limit. Google returns the same status for a per-MINUTE
+ *  limit (wait and it clears) and a per-DAY quota (nothing clears until the quota
+ *  window rolls over), and the retryDelay hint is ~59s in both cases. Retrying an
+ *  exhausted daily quota burned ~5 minutes per run here and every run failed
+ *  anyway, so the two must be told apart.
+ *
+ *  The body distinguishes them: a QuotaFailure detail carries a `quotaId` naming
+ *  the window. Captured verbatim from a real free-tier 429:
+ *    "quotaMetric": "generativelanguage.googleapis.com/generate_content_free_tier_requests"
+ *    "quotaId": "GenerateRequestsPerDayPerProjectPerModel-FreeTier"
+ *    "quotaValue": "20"
+ *  Matched case-insensitively on "PerDay" — the quotaId is the only field that
+ *  states the window, and per-minute ids read ...PerMinute... in the same slot.
+ *
+ *  Both shapes are handled because the SDK surfaces the body either way: parsed
+ *  into `error.details` on some paths, and stringified into `error.message` on
+ *  others. Returns the violation when it is a daily one, else undefined. */
+export function dailyQuotaViolation(err: unknown): { quotaId: string; quotaValue?: string } | undefined {
+  const e = err as any;
+  const details = e?.error?.details ?? e?.details ?? e?.response?.data?.error?.details;
+  for (const d of Array.isArray(details) ? details : []) {
+    for (const v of Array.isArray(d?.violations) ? d.violations : []) {
+      const quotaId = String(v?.quotaId ?? "");
+      if (/perday/i.test(quotaId)) {
+        return { quotaId, ...(v?.quotaValue !== undefined ? { quotaValue: String(v.quotaValue) } : {}) };
+      }
+    }
+  }
+  const raw = String(e?.message ?? "");
+  const id = /"quotaId"\s*:\s*"([^"]*perday[^"]*)"/i.exec(raw);
+  if (!id) return undefined;
+  const value = /"quotaValue"\s*:\s*"?(\d+)"?/.exec(raw);
+  return { quotaId: id[1]!, ...(value ? { quotaValue: value[1]! } : {}) };
+}
+
 /** The throttle above is a guess at the account's real limit, so it cannot be
  *  the only defence. Retries 429 and 5xx only; anything else (401, 400, a bad
  *  schema) re-throws immediately, and so does the final attempt — the loop must
- *  record stop="error" rather than hang. */
+ *  record stop="error" rather than hang. A 429 whose quota is per-DAY is also
+ *  terminal: see dailyQuotaViolation. */
 async function withRetry<T>(label: string, fn: () => Promise<T>): Promise<T> {
   for (let attempt = 1; ; attempt++) {
     try {
       return await throttle(fn);
     } catch (err) {
       const status = statusOf(err);
+      if (status === 429) {
+        const daily = dailyQuotaViolation(err);
+        // Fail fast so the loop records stop="error" now instead of in five
+        // minutes. The `status` is carried over so callers that classify on it
+        // still see a 429, and the original error is kept as the cause.
+        if (daily) {
+          throw Object.assign(new Error(
+            `[google] ${label}: DAILY quota exhausted — quotaId ${daily.quotaId}` +
+            `${daily.quotaValue !== undefined ? `, quotaValue ${daily.quotaValue}` : ""}. ` +
+            `This is a per-day quota, not a per-minute rate limit: retrying cannot succeed, and it ` +
+            `will not reset until the quota window rolls over. Not retrying.`,
+          ), { status, cause: err });
+        }
+      }
       const retryable = status === 429 || (status >= 500 && status < 600);
       if (!retryable || attempt >= MAX_ATTEMPTS) throw err;
       const delay = retryHintMs(err) ?? Math.round(2 ** attempt * 500 * (1 + Math.random()));

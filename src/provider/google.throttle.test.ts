@@ -18,7 +18,7 @@ vi.mock("@google/genai", () => ({
   },
 }));
 
-const { googleProvider } = await import("./google.js");
+const { googleProvider, dailyQuotaViolation } = await import("./google.js");
 
 const cfg: SessionConfig = {
   model: "gemini-2.5-flash", effort: "low", systemPrompt: "sys",
@@ -99,6 +99,91 @@ describe("withRetry", () => {
 
     await expect(googleProvider.prewarm(cfg)).resolves.toMatchObject({ outputTokens: 2 });
     expect(generateContent).toHaveBeenCalledTimes(2);
+    logged.mockRestore();
+  });
+});
+
+// A per-day quota and a per-minute rate limit arrive as the SAME status with the
+// SAME ~59s retryDelay hint. Retrying the daily one burned ~5 minutes per run and
+// every run failed anyway, so the classifier below is what stands between a dead
+// quota and a wasted sweep. Hand-built error objects — no live call.
+describe("daily quota is terminal, per-minute is not", () => {
+  // Captured verbatim from a real free-tier 429 body.
+  const PER_DAY_DETAILS = [
+    {
+      "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+      violations: [{
+        quotaMetric: "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+        quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+        quotaValue: "20",
+      }],
+    },
+    { "@type": "type.googleapis.com/google.rpc.RetryInfo", retryDelay: "59s" },
+  ];
+  const PER_MINUTE_DETAILS = [{
+    "@type": "type.googleapis.com/google.rpc.QuotaFailure",
+    violations: [{
+      quotaMetric: "generativelanguage.googleapis.com/generate_content_free_tier_requests",
+      quotaId: "GenerateRequestsPerMinutePerProjectPerModel-FreeTier",
+      quotaValue: "10",
+    }],
+  }];
+
+  const withDetails = (details: unknown) =>
+    Object.assign(apiError(429, "RESOURCE_EXHAUSTED"), { error: { code: 429, details } });
+
+  describe("dailyQuotaViolation", () => {
+    it("finds the violation in a parsed details array", () => {
+      expect(dailyQuotaViolation(withDetails(PER_DAY_DETAILS))).toEqual({
+        quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+        quotaValue: "20",
+      });
+    });
+
+    it("finds it when the SDK only stringified the body into the message", () => {
+      const err = apiError(429, `429 RESOURCE_EXHAUSTED ${JSON.stringify({ error: { details: PER_DAY_DETAILS } })}`);
+      expect(dailyQuotaViolation(err)).toEqual({
+        quotaId: "GenerateRequestsPerDayPerProjectPerModel-FreeTier",
+        quotaValue: "20",
+      });
+    });
+
+    it("does NOT match a per-minute quota, in either shape", () => {
+      expect(dailyQuotaViolation(withDetails(PER_MINUTE_DETAILS))).toBeUndefined();
+      expect(dailyQuotaViolation(apiError(429, JSON.stringify(PER_MINUTE_DETAILS)))).toBeUndefined();
+      expect(dailyQuotaViolation(apiError(429, HINT))).toBeUndefined();
+    });
+  });
+
+  it("throws on the FIRST attempt for a per-day quota, naming the quota and its value", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    generateContent.mockRejectedValue(withDetails(PER_DAY_DETAILS));
+
+    await expect(googleProvider.prewarm(cfg)).rejects.toThrow(
+      /DAILY quota exhausted.*GenerateRequestsPerDayPerProjectPerModel-FreeTier.*quotaValue 20/s,
+    );
+    // The point of the whole fix: one call, not five, and no ~59s waits.
+    expect(generateContent).toHaveBeenCalledTimes(1);
+    expect(logged).not.toHaveBeenCalled();          // nothing was retried, so nothing was logged
+    logged.mockRestore();
+  });
+
+  it("says the quota will not reset, so the message cannot be read as retry advice", async () => {
+    generateContent.mockRejectedValue(withDetails(PER_DAY_DETAILS));
+    await expect(googleProvider.prewarm(cfg)).rejects.toThrow(/not reset until the quota window rolls over/);
+    // Status preserved: a caller classifying on 429 must still see one.
+    generateContent.mockRejectedValue(withDetails(PER_DAY_DETAILS));
+    await expect(googleProvider.prewarm(cfg)).rejects.toMatchObject({ status: 429 });
+  });
+
+  it("still retries a per-minute quota 429 to the cap — the existing behaviour, unchanged", async () => {
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    generateContent.mockRejectedValue(
+      Object.assign(withDetails(PER_MINUTE_DETAILS), { headers: { "retry-after": "0" } }),
+    );
+
+    await expect(googleProvider.prewarm(cfg)).rejects.toMatchObject({ status: 429 });
+    expect(generateContent).toHaveBeenCalledTimes(5);
     logged.mockRestore();
   });
 });

@@ -16,9 +16,14 @@ function makeSandbox(prefix) {
   return mkdtempSync(join(base, prefix));
 }
 
+const VITEST_CLI = join(HARNESS_ROOT, "node_modules", "vitest", "vitest.mjs");
+
 function runVitest(root, timeoutMs) {
-  return spawnSync("npx", ["vitest", "run", "--root", `"${root}"`, "--reporter=basic"], {
-    cwd: HARNESS_ROOT, encoding: "utf8", timeout: timeoutMs, shell: true,
+  // No shell, for the reasons src/sandbox.ts spells out: with `shell: true` the
+  // timeout kills cmd.exe and leaves the real vitest process tree orphaned, and
+  // the same 120s timeout below made this script leak them too.
+  return spawnSync(process.execPath, [VITEST_CLI, "run", "--root", root, "--reporter=basic"], {
+    cwd: HARNESS_ROOT, encoding: "utf8", timeout: timeoutMs,
   });
 }
 

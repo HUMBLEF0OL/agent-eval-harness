@@ -11,7 +11,7 @@ vi.mock("@anthropic-ai/sdk", () => ({
   },
 }));
 
-const { anthropicProvider } = await import("./anthropic.js");
+const { anthropicProvider, thinkingFor } = await import("./anthropic.js");
 
 const cfg: SessionConfig = {
   model: "claude-sonnet-4-5", effort: "low", systemPrompt: "sys",
@@ -111,5 +111,90 @@ describe("Anthropic session history across turns", () => {
     const { messages } = create.mock.calls[1]![0] as { messages: any[] };
     const blocks = messages.flatMap(m => (Array.isArray(m.content) ? m.content : []));
     expect(blocks.some((b: any) => b.type === "thinking" && b.cache_control)).toBe(false);
+  });
+});
+
+// The request SHAPE, pinned against the installed SDK. `output_config: { effort }`
+// was an invented field — @anthropic-ai/sdk@0.70.1 declares no such parameter and
+// no `effort` anywhere — and it survived only because the whole request was cast
+// `as any`. The cast is gone, so the compiler guards the shape; these guard the
+// mapping the compiler cannot see.
+describe("effort control against the installed SDK", () => {
+  describe("thinkingFor", () => {
+    it("maps the neutral ladder onto budget_tokens, monotonically", () => {
+      const cap = 64000;   // high enough that nothing clamps
+      expect(thinkingFor("low", cap)).toEqual({ type: "enabled", budget_tokens: 1024 });
+      expect(thinkingFor("medium", cap)).toEqual({ type: "enabled", budget_tokens: 4096 });
+      expect(thinkingFor("high", cap)).toEqual({ type: "enabled", budget_tokens: 16384 });
+      expect(thinkingFor("xhigh", cap)).toEqual({ type: "enabled", budget_tokens: 24576 });
+    });
+
+    it("keeps the budget under max_tokens — the SDK type requires budget < max_tokens", () => {
+      // The runner's real cap. `xhigh` nominally asks 24576, which exceeds it.
+      for (const effort of ["low", "medium", "high", "xhigh"] as const) {
+        const t = thinkingFor(effort, 16000);
+        if (t.type !== "enabled") throw new Error("expected thinking enabled at a 16000-token cap");
+        expect(t.budget_tokens).toBeLessThan(16000);
+        expect(t.budget_tokens).toBeGreaterThanOrEqual(1024);
+      }
+    });
+
+    it("disables thinking rather than sending an illegal sub-1024 budget", () => {
+      // "Must be ≥1024 and less than max_tokens" — a cap under 2048 cannot satisfy
+      // both, so the only legal request is thinking off. prewarm's cap is 1.
+      expect(thinkingFor("high", 2047)).toEqual({ type: "disabled" });
+      expect(thinkingFor("low", 1)).toEqual({ type: "disabled" });
+    });
+  });
+
+  it("sends `thinking`, never `output_config`, on a session turn", async () => {
+    create.mockReset();
+    create.mockResolvedValueOnce(turn2);
+    await anthropicProvider.start(cfg, "task").step(null);
+
+    const req = create.mock.calls[0]![0] as Record<string, unknown>;
+    expect(req["thinking"]).toEqual({ type: "enabled", budget_tokens: 1024 });   // cfg.effort = "low"
+    expect(req).not.toHaveProperty("output_config");
+    expect(JSON.stringify(req)).not.toMatch(/effort/);
+  });
+
+  it("keeps prewarm's thinking DISABLED and its max_tokens >= 1", async () => {
+    create.mockReset();
+    create.mockResolvedValueOnce(turn2);
+    await anthropicProvider.prewarm(cfg);
+
+    const req = create.mock.calls[0]![0] as Record<string, unknown>;
+    expect(req["thinking"]).toEqual({ type: "disabled" });
+    expect(req["max_tokens"]).toBeGreaterThanOrEqual(1);
+    expect(req).not.toHaveProperty("output_config");
+  });
+
+  it("gets structured output from a FORCED tool call, the only typed mechanism 0.70 has", async () => {
+    create.mockReset();
+    const schema = { type: "object", properties: { cheated: { type: "boolean" } } };
+    create.mockResolvedValueOnce({
+      id: "msg_c", type: "message", role: "assistant", stop_reason: "tool_use", usage,
+      content: [{ type: "tool_use", id: "tu_v", name: "emit_verdict", input: { cheated: false } }],
+    });
+
+    const out = await anthropicProvider.complete(cfg, "audit this", schema);
+    expect(out.value).toEqual({ cheated: false });
+
+    const req = create.mock.calls[0]![0] as any;
+    expect(req.tool_choice).toEqual({ type: "tool", name: "emit_verdict" });
+    expect(req.tools[0].input_schema).toBe(schema);      // the schema does real work
+    expect(req.thinking).toEqual({ type: "disabled" });  // forced tool use forbids thinking
+    expect(req).not.toHaveProperty("output_config");
+  });
+
+  it("throws instead of returning undefined when no tool_use block came back", async () => {
+    create.mockReset();
+    create.mockResolvedValueOnce({
+      id: "msg_c", type: "message", role: "assistant", stop_reason: "end_turn", usage,
+      content: [{ type: "text", text: "I would rather explain in prose." }],
+    });
+
+    await expect(anthropicProvider.complete(cfg, "audit this", {}))
+      .rejects.toThrow(/no emit_verdict tool_use block.*prose/s);
   });
 });

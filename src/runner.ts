@@ -99,12 +99,24 @@ export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 
  *  a single zero says nothing and a per-run assert would abort a healthy sweep. */
 export const CACHE_WINDOW: Record<CacheMode, number> = { explicit: 1, implicit: 8 };
 
+/** The floor under the capped window: fewer completed runs than this cannot
+ *  convict an IMPLICIT vendor no matter how short the sweep is. Capping the
+ *  window at the cell count (below) is right for a 5-cell sweep and wrong for a
+ *  1-cell one — it collapsed a `--reps 1` pre-flight straight back to the
+ *  single-run gate the windowing existed to remove, and aborted it. Measured
+ *  miss rate on gemini-2.5-flash was ~2 in 3, so 1-3 zeroes are ordinary
+ *  variance, not evidence. Below this threshold the verdict is INSUFFICIENT
+ *  EVIDENCE: warn, never abort. Explicit vendors are unaffected — they set a
+ *  cache key or breakpoint, so one zero is already proof. */
+export const CACHE_MIN_EVIDENCE = 4;
+
 /** Returns an abort message when the evidence is conclusive, else null.
  *  Explicit: one completed run with no cache read is already conclusive.
  *  Implicit: only a whole window of completed runs with ZERO cache reads in
- *  aggregate is conclusive — one miss is normal and must not abort a sweep.
+ *  aggregate is conclusive, AND only once CACHE_MIN_EVIDENCE runs exist — one
+ *  miss is normal and must not abort a sweep, and neither may three.
  *  `window` is passed in so a variant with fewer cells than the window is judged
- *  at its own end rather than never: a 3-run sweep that never caches must fail. */
+ *  at its own end rather than never: a 5-run sweep that never caches must fail. */
 export function cacheVerdict(
   mode: CacheMode,
   completedRuns: number,
@@ -112,6 +124,18 @@ export function cacheVerdict(
   window = CACHE_WINDOW[mode],
 ): string | null {
   if (aggregateCacheReadTokens > 0 || completedRuns < window) return null;
+  if (mode === "implicit" && completedRuns < CACHE_MIN_EVIDENCE) {
+    // Warned, not thrown: a sweep this short cannot tell a broken cache from
+    // Gemini's ordinary variance, so the operator gets told and the sweep runs.
+    console.error(
+      `[cache] INSUFFICIENT EVIDENCE: ${completedRuns} completed run(s) of a vendor with implicit ` +
+      `caching read 0 cached tokens, below the ${CACHE_MIN_EVIDENCE}-run minimum this gate needs to ` +
+      `convict. Not aborting — implicit caching misses roughly 2 runs in 3, so this says nothing. ` +
+      `Cost numbers from this sweep are UNVERIFIED for caching; re-run with at least ` +
+      `${CACHE_MIN_EVIDENCE} cells to check it.`,
+    );
+    return null;
+  }
   return `prompt caching is not working: ${completedRuns} completed run(s) of a vendor with ` +
     `${mode} caching read ${aggregateCacheReadTokens} cached tokens in aggregate, over a ` +
     `${window}-run window. Every cost number in this sweep would be wrong. Aborting. ` +
@@ -246,7 +270,9 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
       const cells = fixtures.flatMap(f =>
         Array.from({ length: opts.reps }, (_, rep) => ({ fixture: f, rep })));
       // Cache-integrity evidence for this variant. The window is capped at the
-      // cell count so a short sweep is judged at its end rather than never.
+      // cell count so a short sweep is judged at its end rather than never —
+      // but cacheVerdict refuses to convict an implicit vendor on fewer than
+      // CACHE_MIN_EVIDENCE runs, so the cap cannot re-create the single-run gate.
       const cacheWindow = Math.min(CACHE_WINDOW[provider.cacheMode], cells.length);
       let cacheRuns = 0, cacheReads = 0, cacheProven = false;
 

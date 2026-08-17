@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type {
-  Provider, Session, SessionConfig, Step, StopReason,
+  Effort, Provider, Session, SessionConfig, Step, StopReason,
   ToolCall, ToolResult, ToolSpec, UsageTotals,
 } from "../types.js";
 
@@ -68,6 +68,41 @@ function buildSystem(prompt: string) {
   return [{ type: "text" as const, text: prompt, cache_control: { type: "ephemeral" as const } }];
 }
 
+/** effort -> extended-thinking budget. CHECKED against the installed SDK, no key
+ *  required: @anthropic-ai/sdk@0.70.1's MessageCreateParams has NO `output_config`
+ *  and no `effort` field anywhere — grepping every .d.ts under node_modules/
+ *  @anthropic-ai/sdk for `output_config` or `effort` returns ZERO hits, so the
+ *  previous `output_config: { effort }` was an invented field that only compiled
+ *  because the whole request object was cast `as any`. A reviewer's finding, now
+ *  confirmed rather than suspected.
+ *
+ *  What the installed types DO expose, verbatim from resources/messages/messages.d.ts:
+ *      thinking?: ThinkingConfigParam;
+ *      export type ThinkingConfigParam = ThinkingConfigEnabled | ThinkingConfigDisabled;
+ *      export interface ThinkingConfigEnabled { budget_tokens: number; type: 'enabled'; }
+ *      export interface ThinkingConfigDisabled { type: 'disabled'; }
+ *  with the doc comment on budget_tokens: "Must be ≥1024 and less than `max_tokens`."
+ *
+ *  So the neutral ladder maps onto budget_tokens here — the adapter's job, exactly
+ *  as the Google adapter maps effort onto thinkingBudget. The numbers match that
+ *  adapter's ladder so the two vendors' arms mean the same thing.
+ *
+ *  Two constraints from the type's own doc, both enforced below:
+ *   - budget < max_tokens. Thinking is spent out of max_tokens, so half the turn's
+ *     cap is the reserve (same reasoning, and same ceiling, as google.ts: under a
+ *     16000-token cap high and xhigh clamp to the same number).
+ *   - budget >= 1024, or the API rejects it. A cap under 2048 therefore cannot host
+ *     thinking at all, so it is DISABLED rather than sent as an illegal budget —
+ *     which is also what prewarm needs (max_tokens 1, nothing to think about). */
+const THINKING_BUDGET: Record<Effort, number> = {
+  low: 1024, medium: 4096, high: 16384, xhigh: 24576,
+};
+
+export function thinkingFor(effort: Effort, maxTokens: number): Anthropic.ThinkingConfigParam {
+  const budget = Math.min(THINKING_BUDGET[effort], Math.floor(maxTokens / 2));
+  return budget >= 1024 ? { type: "enabled", budget_tokens: budget } : { type: "disabled" };
+}
+
 /** Breakpoints 2 and 3 of TSD §6.1. What this actually does: marks the LAST
  *  content block of the last message, and — when there are at least 4 messages —
  *  the last content block of the 4th-from-last MESSAGE. Messages, not blocks:
@@ -103,20 +138,17 @@ class AnthropicSession implements Session {
     // ALL results in ONE user message — the exact opposite of OpenAI.
     if (results) this.messages.push(buildToolResultMessage(results));
 
+    // No `as any` on this request any more: every field is one the installed
+    // SDK's MessageCreateParams actually declares, so the compiler checks the
+    // shape from now on and an invented field is a build error, not a live 400.
     const res = await client().messages.create({
       model: this.cfg.model,
       max_tokens: this.cfg.maxTokensPerTurn,
-      // UNVERIFIED. `output_config` is NOT in @anthropic-ai/sdk@0.70's MessageCreateParams;
-      // it only compiles because the whole object is cast `as any` below, so TypeScript
-      // never checks it and no offline test can either. The plan mandates this shape, and
-      // it cannot be settled without a live call — ANTHROPIC_API_KEY is unset here.
-      // FIRST THING TO CHECK the day a key appears: if the API 400s on an unknown field,
-      // this (and the two identical lines in complete/prewarm) is why.
-      output_config: { effort: this.cfg.effort },
+      thinking: thinkingFor(this.cfg.effort, this.cfg.maxTokensPerTurn),
       system: buildSystem(this.cfg.systemPrompt),
       tools: mapTools(this.cfg.tools),
       messages: withCacheBreakpoints(this.messages),
-    } as any) as Res;
+    });
 
     // The ENTIRE content array, thinking blocks included — signatures must round-trip.
     this.messages.push({ role: "assistant", content: res.content });
@@ -138,24 +170,38 @@ export const anthropicProvider: Provider = {
   cacheMode: "explicit",
   start: (cfg, task) => new AnthropicSession(cfg, task),
   async complete(cfg, prompt, schema) {
+    // `output_config.format` was the other half of the same invented field: the
+    // installed SDK has no structured-output parameter at all (no `format`, no
+    // `response_format`, no `json_schema` anywhere in its types). The typed
+    // mechanism it does have is a FORCED tool call — the schema becomes the
+    // tool's input_schema and the reply comes back as tool_use input, already an
+    // object, so there is nothing to JSON.parse and no prose to strip.
+    // Thinking must be disabled: forced tool use and extended thinking are
+    // mutually exclusive, and an audit call this small has nothing to think about.
+    const TOOL = "emit_verdict";
     const res = await client().messages.create({
       model: cfg.model,
       max_tokens: 2000,
-      output_config: { effort: "low", format: { type: "json_schema", schema } },
+      thinking: { type: "disabled" },
+      tools: [{ name: TOOL, description: "Return the verdict as structured data.", input_schema: schema as any }],
+      tool_choice: { type: "tool", name: TOOL },
       messages: [{ role: "user", content: prompt }],
-    } as any) as Res;
-    return { value: JSON.parse(textOf(res)), usage: normaliseUsage(res) };
+    });
+    const call = extractToolCalls(res)[0];
+    // The caller validates the verdict's fields; this only guarantees it got an
+    // object at all, rather than handing `undefined` down the line.
+    if (!call) throw new Error(`Anthropic complete returned no ${TOOL} tool_use block: ${textOf(res)}`);
+    return { value: call.input, usage: normaliseUsage(res) };
   },
   async prewarm(cfg) {
     const res = await client().messages.create({
       model: cfg.model,
       max_tokens: 1,          // the Messages API requires >= 1; 0 is a 400 on the FIRST call of a sweep
-      thinking: { type: "disabled" },
-      output_config: { effort: "low" },
+      thinking: { type: "disabled" },   // nothing to think about, and a budget must be < max_tokens
       system: buildSystem(cfg.systemPrompt),
       tools: mapTools(cfg.tools),
       messages: [{ role: "user", content: "warmup" }],
-    } as any) as Res;
+    });
     return normaliseUsage(res);
   },
 };

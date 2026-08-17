@@ -467,7 +467,7 @@ return {
 const res = await client.messages.create({
   model: cfg.model,
   max_tokens: cfg.maxTokensPerTurn,
-  output_config: { effort: cfg.effort },
+  thinking: thinkingFor(cfg.effort, cfg.maxTokensPerTurn),   // effort -> budget_tokens
   system: buildSystem(cfg.systemPrompt),           // cache_control on the last block, §6.1
   tools: cfg.tools.map(t => ({
     name: t.name,
@@ -477,6 +477,8 @@ const res = await client.messages.create({
   messages: withCacheBreakpoints(messages),        // §6.1
 });
 ```
+
+**Effort — CHECKED against the installed SDK (no key required).** Earlier revisions of this document specified `output_config: { effort: cfg.effort }`. That field does not exist: grepping every `.d.ts` under `node_modules/@anthropic-ai/sdk` (0.70.1) for `output_config` or `effort` returns zero hits, and the adapter's request only compiled because the whole object was cast `as any`. What `MessageCreateParams` actually declares is `thinking?: ThinkingConfigParam`, where `ThinkingConfigParam = { type: "enabled"; budget_tokens: number } | { type: "disabled" }` and `budget_tokens` is documented as "Must be ≥1024 and less than `max_tokens`". So Anthropic's effort knob is a **token budget**, like Google's — not a level, like OpenAI's — and `thinkingFor(effort, maxTokens)` in the adapter maps the neutral ladder onto it with the same numbers and the same half-the-cap clamp as `thinkingBudgetFor` (§5.5): a budget that cannot satisfy both constraints (a cap under 2048) yields `{ type: "disabled" }` rather than an illegal request. The `as any` on this request is gone, so the compiler now rejects an invented field instead of deferring it to a live 400.
 
 **History:**
 
@@ -517,7 +519,7 @@ Everything an adapter has to reconcile, in one place. This table is the spec for
 | Concept | Anthropic Messages | OpenAI Responses | Google `generateContent` |
 |---|---|---|---|
 | System prompt | `system` (array of blocks) | `instructions` (string) | `config.systemInstruction` |
-| Effort | `output_config.effort` | `reasoning.effort` | `config.thinkingConfig.thinkingBudget` — a **token budget**, not a level |
+| Effort | `thinking: { type: "enabled", budget_tokens }` — a **token budget**, not a level (there is no `output_config`/`effort` field; see §5.2) | `reasoning.effort` | `config.thinkingConfig.thinkingBudget` — a **token budget**, not a level |
 | Tool schema key | `input_schema` | `parameters` (+ `strict`) | `parameters`, nested under one `tools[0].functionDeclarations` |
 | Tool call | `tool_use` block, `id`, `input` is an **object** | `function_call` item, `call_id`, `arguments` is a **JSON string** | `functionCall` part, **no id**, `args` is an **object** |
 | Tool result | `tool_result` blocks, **all in one** user message | `function_call_output` items, **one each** | `functionResponse` parts, **all in one** user `Content`, matched by **name** |
@@ -659,9 +661,8 @@ return normaliseUsage(res);
 ```ts
 const res = await client.messages.create({
   model: cfg.model,
-  max_tokens: 0,                          // prefill only
-  thinking: { type: "disabled" },
-  output_config: { effort: "low" },
+  max_tokens: 1,                          // prefill only; the API requires >= 1
+  thinking: { type: "disabled" },         // nothing to think about, and a budget must be < max_tokens
   system: buildSystem(cfg.systemPrompt),  // cache_control on the last block
   tools: mapTools(cfg.tools),
   messages: [{ role: "user", content: "warmup" }],
@@ -733,9 +734,11 @@ Measured, three recorded sessions against `gemini-2.5-flash` with an identical ~
 
 Session 2 proves both the mechanism and the normalisation — 598 uncached input + 782 cached = 1380, the whole prefix. Sessions 1 and 3 prove that any individual run may legitimately read nothing. A per-run assert would therefore have aborted a *healthy* Gemini sweep at run 1 on roughly two attempts in three, blaming prompt caching when nothing was wrong, and each false abort burns free-tier quota (250 requests/day).
 
-So for implicit vendors only a *sustained* zero is evidence: `CACHE_WINDOW.implicit = 8` completed runs whose `cacheReadTokens` sum to 0. The moment any run reads the cache, the mechanism is proven for that variant and checking stops. If a variant has fewer cells than the window, the window is capped at the cell count and the verdict is reached at the end of the variant instead of never — a 3-run sweep that never caches must still fail, just not before the evidence exists.
+So for implicit vendors only a *sustained* zero is evidence: `CACHE_WINDOW.implicit = 8` completed runs whose `cacheReadTokens` sum to 0. The moment any run reads the cache, the mechanism is proven for that variant and checking stops. If a variant has fewer cells than the window, the window is capped at the cell count and the verdict is reached at the end of the variant instead of never — a 5-run sweep that never caches must still fail, just not before the evidence exists.
 
-`cacheVerdict(mode, completedRuns, aggregateCacheReadTokens, window)` in `runner.ts` is the whole rule, pure and unit-tested; the abort message states the evidence (mode, runs observed, aggregate reads, window), not just "caching is not working".
+That cap has a floor under it: `CACHE_MIN_EVIDENCE = 4`. Capping the window at the cell count is right for a 5-cell sweep and wrong for a 1-cell one, because it collapses straight back to the single-run gate this whole section exists to remove — verified live, `--tasks 001-off-by-one --reps 1` aborted with "1 completed run(s) … over a 1-run window", breaking the cheapest pre-flight command the plan prescribes. Below the threshold an implicit vendor's whole-window zero is **insufficient evidence**: `cacheVerdict` writes a one-line `[cache] INSUFFICIENT EVIDENCE` warning to stderr naming the run count and returns `null`, so the sweep runs and the operator knows the cost axis is unverified for caching. At or above the threshold a whole-window zero aborts as before. Explicit vendors are unaffected: one completed run reading zero still aborts immediately.
+
+`cacheVerdict(mode, completedRuns, aggregateCacheReadTokens, window)` in `runner.ts` is the whole rule, pure apart from that one warning and unit-tested; the abort message states the evidence (mode, runs observed, aggregate reads, window), not just "caching is not working".
 
 ---
 
@@ -905,8 +908,8 @@ complete(cfg: SessionConfig, prompt: string, schema: object): Promise<unknown>;
 
 | | OpenAI | Anthropic |
 |---|---|---|
-| Param | `text: { format: { type: "json_schema", name, schema, strict: true } }` | `output_config: { format: { type: "json_schema", schema } }` |
-| Requires | `additionalProperties: false`, all keys in `required` | `additionalProperties: false` |
+| Param | `text: { format: { type: "json_schema", name, schema, strict: true } }` | no structured-output param exists in @anthropic-ai/sdk 0.70.1 — a **forced tool call** instead: `tools: [{ name, input_schema: schema }]` + `tool_choice: { type: "tool", name }`, and the verdict comes back as the `tool_use` block's `input` (already an object) |
+| Requires | `additionalProperties: false`, all keys in `required` | `thinking: { type: "disabled" }` — forced tool use and extended thinking are mutually exclusive |
 
 The judge runs on the cheapest capable model available, at `effort: "low"` — small input, judgment quality matters, cost is negligible. It must **not** run on the same model under test where that would be self-grading; note the judge model in the report.
 
@@ -1155,6 +1158,6 @@ fixtures/001-off-by-one/
 2. **`strict: true` with an empty properties object** — `list_files` and `run_tests` take no arguments. Confirm OpenAI accepts a strict function schema with `properties: {}`. If not, drop to `strict: false` for those two only.
 3. **`gpt-5.6-terra` vs `gpt-5.6`** — Terra's pricing is verified and Terra is the coding-oriented variant, so it is the default. Confirm availability on this key before the sweep; if absent, verify `gpt-5.6` pricing and switch.
 4. **System prompt length vs the 1024-token cache floor** — the pre-warm now measures this automatically (§6.4). The open question is only what to *add* if it lands short: tool-use guidance and worked examples, not padding.
-5. **RESOLVED — fixture execution strategy.** No fixture carries `node_modules`: `.gitignore` matches `node_modules/` at any depth, so a fixture install could never be committed and a fresh clone would be broken anyway (a measured `cpSync` of one `node_modules` took 1588ms, which settled it — copying is not the fix, not shipping it is). Instead, vitest is always run as `npx vitest run --root <sandboxDir> --reporter=basic` with `cwd` set to the harness root, so the binary and its dependencies resolve from the single root install rather than from the fixture. The sandbox directory itself must live on the same drive as the harness: this repo is on `E:` and `os.tmpdir()` is on `C:`, and running `--root <C: path>` from the `E:` repo fails with `ERR_MODULE_NOT_FOUND: vitest`, because Node's ESM resolver will not walk up past a drive root to find the harness's `node_modules`. The same command against a sandbox under `E:` runs correctly. So sandboxes are created under `<repo>/.aeh-tmp/` (gitignored), never under `os.tmpdir()`. This is implemented once, in `src/sandbox.ts` (`makeSandbox`/`runVitest`), and every caller — `src/tools.ts`, `src/score/tests.ts`, `src/demo.ts`, `src/runner.ts`, `scripts/verify-fixtures.mjs` — goes through it. The vitest cold-start cost this raised (multiple seconds per invocation on Windows) is real but secondary: `wall_ms` in `RunRow` does measure Node startup as well as agent behaviour, which is disclosed rather than hidden, and is exactly why the report's cost figures come from token usage, never from wall clock.
+5. **RESOLVED — fixture execution strategy.** No fixture carries `node_modules`: `.gitignore` matches `node_modules/` at any depth, so a fixture install could never be committed and a fresh clone would be broken anyway (a measured `cpSync` of one `node_modules` took 1588ms, which settled it — copying is not the fix, not shipping it is). Instead, vitest is always run as `node <harnessRoot>/node_modules/vitest/vitest.mjs run --root <sandboxDir> --reporter=basic` with `cwd` set to the harness root, so the binary and its dependencies resolve from the single root install rather than from the fixture. It runs vitest's CLI entry point with `process.execPath` and **no shell** — going through `npx` needed `shell: true` on Windows, and with a shell in the way `spawnSync`'s `timeout` signals `cmd.exe` while the real node/vitest process tree survives: a hung suite leaked one orphaned vitest per timeout (observed after one stopped sweep: 3 sweep processes and 7 stray vitest/tinypool processes, the leaked Gemini sweep still issuing billable calls). Reproduced and fixed against a deliberately hanging suite — old path: `signal=SIGTERM` and two surviving `node.exe`; new path: `signal=SIGTERM` and none. Dropping the shell also removes the hand-quoting of `--root` (this repo's path contains a space) and the `DEP0190` deprecation warning every call used to emit. The sandbox directory itself must live on the same drive as the harness: this repo is on `E:` and `os.tmpdir()` is on `C:`, and running `--root <C: path>` from the `E:` repo fails with `ERR_MODULE_NOT_FOUND: vitest`, because Node's ESM resolver will not walk up past a drive root to find the harness's `node_modules`. The same command against a sandbox under `E:` runs correctly. So sandboxes are created under `<repo>/.aeh-tmp/` (gitignored), never under `os.tmpdir()`. This is implemented once, in `src/sandbox.ts` (`makeSandbox`/`runVitest`), and every caller — `src/tools.ts`, `src/score/tests.ts`, `src/demo.ts`, `src/runner.ts`, `scripts/verify-fixtures.mjs` — goes through it. The vitest cold-start cost this raised (multiple seconds per invocation on Windows) is real but secondary: `wall_ms` in `RunRow` does measure Node startup as well as agent behaviour, which is disclosed rather than hidden, and is exactly why the report's cost figures come from token usage, never from wall clock.
 6. **Whether 3 reps is enough** — the first sweep answers this. If CIs are uselessly wide, raise reps for the headline variants only rather than across the board.
-7. **Anthropic `output_config.effort`** — verified against the rev-1 research but unrun. The first live Anthropic call, whenever a key appears, is the test.
+7. **CLOSED — Anthropic `output_config.effort` was an invented field.** No key was needed to settle it: the installed SDK's own types are on disk, and `@anthropic-ai/sdk@0.70.1` declares no `output_config` and no `effort` anywhere (zero grep hits across every `.d.ts`). It only ever compiled because the request was cast `as any`. The adapter now uses the mechanism the installed SDK does declare — `thinking: { type: "enabled", budget_tokens }` / `{ type: "disabled" }` — with the neutral ladder mapped onto `budget_tokens` in the adapter (§5.2), and the cast removed so the compiler checks the shape from now on. The same cast was hiding `output_config.format` in `complete()`; that is now a forced tool call (§9.3). Nothing here waits on a live call any more.

@@ -2,7 +2,8 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_WINDOW, cacheVerdict, pool, requireKey,
+  assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
+  cacheVerdict, pool, requireKey,
 } from "./runner.js";
 import { zeroUsage } from "./cost.js";
 import { PROVIDERS } from "./provider/index.js";
@@ -94,11 +95,63 @@ describe("cacheVerdict", () => {
   });
 
   it("judges a sweep shorter than the window at its own end, not never", () => {
-    // 3 cells: the runner caps the window at the cell count, so all-zero is
-    // conclusive at run 3 — but not at run 2, and not under the default window.
-    expect(cacheVerdict("implicit", 2, 0, 3)).toBeNull();
-    expect(cacheVerdict("implicit", 3, 0, 3)).toMatch(/3 completed run\(s\).*3-run window/s);
-    expect(cacheVerdict("implicit", 3, 0)).toBeNull();
+    // 5 cells: the runner caps the window at the cell count, so all-zero is
+    // conclusive at run 5 — but not at run 4, and not under the default window.
+    expect(cacheVerdict("implicit", 4, 0, 5)).toBeNull();
+    expect(cacheVerdict("implicit", 5, 0, 5)).toMatch(/5 completed run\(s\).*5-run window/s);
+    expect(cacheVerdict("implicit", 5, 0)).toBeNull();
+  });
+
+  it("refuses to convict an implicit vendor on fewer than CACHE_MIN_EVIDENCE runs", () => {
+    // The G4 bug: `--tasks 001-off-by-one --reps 1` gives a 1-cell sweep, the
+    // runner caps the window at 1, and the gate collapsed back to the single-run
+    // assert that windowing existed to remove — aborting the cheapest pre-flight
+    // command the plan prescribes. One sample cannot tell a broken cache from
+    // Gemini's ~2-in-3 miss rate, so it must warn and carry on.
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      for (let runs = 1; runs < CACHE_MIN_EVIDENCE; runs++) {
+        warned.mockClear();
+        // window === runs: the capped window has closed, which is exactly when
+        // the old code aborted.
+        expect(cacheVerdict("implicit", runs, 0, runs)).toBeNull();
+        expect(warned).toHaveBeenCalledTimes(1);
+        expect(warned.mock.calls[0]![0]).toMatch(/INSUFFICIENT EVIDENCE/);
+        expect(warned.mock.calls[0]![0]).toContain(`${runs} completed run(s)`);
+        // A warning, not an accusation: it must not read as the abort message.
+        expect(warned.mock.calls[0]![0]).not.toMatch(/Aborting/);
+      }
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  it("becomes conclusive for an implicit vendor at exactly CACHE_MIN_EVIDENCE runs", () => {
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const v = cacheVerdict("implicit", CACHE_MIN_EVIDENCE, 0, CACHE_MIN_EVIDENCE);
+      expect(v).toMatch(/prompt caching is not working/);
+      expect(v).toMatch(/4 completed run\(s\).*implicit.*4-run window/s);
+      expect(warned).not.toHaveBeenCalled();   // conclusive, so no hedged warning
+      // Still nothing to say when the cache was read.
+      expect(cacheVerdict("implicit", CACHE_MIN_EVIDENCE, 782, CACHE_MIN_EVIDENCE)).toBeNull();
+    } finally {
+      warned.mockRestore();
+    }
+  });
+
+  it("leaves the explicit path completely untouched by the evidence floor", () => {
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      // One completed run, zero reads, one-run window: still an immediate abort,
+      // with no warning and no waiting for a fourth run.
+      for (let runs = 1; runs < CACHE_MIN_EVIDENCE; runs++) {
+        expect(cacheVerdict("explicit", runs, 0)).toMatch(/prompt caching is not working/);
+      }
+      expect(warned).not.toHaveBeenCalled();
+    } finally {
+      warned.mockRestore();
+    }
   });
 });
 
