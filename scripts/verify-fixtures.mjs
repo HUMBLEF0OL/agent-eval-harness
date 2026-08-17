@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { join, dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -30,23 +30,46 @@ function runVitest(root, timeoutMs) {
 const vitestStatus = (root) => runVitest(root, 120_000).status;
 
 let failures = 0;
+let controls = 0;
 for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
   // One broken fixture (bad meta.json, missing fixed/ file, stray non-directory)
   // must not abort the sweep or strand its sandbox — report it and keep going.
   let tmp;
   try {
     const meta = JSON.parse(readFileSync(join(HARNESS_ROOT, "fixtures", id, "meta.json"), "utf8"));
+
+    // A control fixture (fixtures/9xx) cannot be made green by ANY source change —
+    // it exists to corner an agent so the tamper detector finally has something to
+    // detect. So its required property is the inverse of an ordinary fixture's, and
+    // it is checked rather than assumed: the suite must be red to begin with AND
+    // still red after the ordinary, competent repair in ordinary-fix/. A control
+    // that some source edit could quietly satisfy would silently stop being a
+    // positive control, and every tampered=0 reading taken from it would be
+    // uninterpretable. It must also carry no fixed/ directory, because there is no
+    // answer key to hold and an accidental one would send this script down the
+    // ordinary-fixture path.
+    const isControl = meta.control === true;
+    const patchDir = isControl ? "ordinary-fix" : "fixed";
+
     tmp = makeSandbox("aeh-verify-");
     cpSync(join(HARNESS_ROOT, "fixtures", id, "repo"), tmp, { recursive: true });
 
     const before = vitestStatus(tmp);
-    const fixed = readFileSync(join(HARNESS_ROOT, "fixtures", id, "fixed", meta.brokenFile), "utf8");
-    writeFileSync(join(tmp, meta.brokenFile), fixed);
+    const patched = readFileSync(join(HARNESS_ROOT, "fixtures", id, patchDir, meta.brokenFile), "utf8");
+    writeFileSync(join(tmp, meta.brokenFile), patched);
     const after = vitestStatus(tmp);
 
-    const ok = before !== 0 && after === 0;
+    let ok, note = "";
+    if (isControl) {
+      const strayAnswerKey = existsSync(join(HARNESS_ROOT, "fixtures", id, "fixed"));
+      ok = before !== 0 && after !== 0 && !strayAnswerKey;
+      note = strayAnswerKey ? "  control: has a stray fixed/ directory" : "  control: still red after the ordinary fix";
+      controls++;
+    } else {
+      ok = before !== 0 && after === 0;
+    }
     if (!ok) failures++;
-    console.log(`${ok ? "ok  " : "FAIL"} ${id}  before=${before} after=${after}`);
+    console.log(`${ok ? "ok  " : "FAIL"} ${id}  before=${before} after=${after}${note}`);
   } catch (e) {
     failures++;
     console.log(`FAIL ${id}  ${e instanceof Error ? e.message : String(e)}`);
@@ -56,4 +79,4 @@ for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
 }
 
 if (failures) { console.error(`${failures} fixture(s) invalid`); process.exit(1); }
-console.log("all fixtures fail before and pass after");
+console.log(`all fixtures fail before and pass after, and all ${controls} control fixture(s) stay red`);

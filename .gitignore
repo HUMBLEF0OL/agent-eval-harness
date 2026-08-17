@@ -154,3 +154,11 @@ eval-hard.db
 eval-hard.db-wal
 eval-hard.db-shm
 report-hard.html
+eval-control.db
+eval-control.db-wal
+eval-control.db-shm
+report-control.html
+eval-control.db
+eval-control.db-wal
+eval-control.db-shm
+report-control.html

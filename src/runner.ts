@@ -240,14 +240,22 @@ export function buildSourceDiff(pristineDir: string, root: string): string {
   return parts.join("\n\n");
 }
 
-function loadFixtures(filter?: string[]) {
-  return fs.readdirSync("fixtures")
+/** Control fixtures (`meta.control`, the 9xx tier) are OPT-IN: they are impossible
+ *  by construction, so `passed` is 0 for every configuration on every one of them.
+ *  Letting a bare `npm run sweep` pick them up would fold four guaranteed zeroes
+ *  into each variant's pass rate — silently, and in the one column the whole report
+ *  is read for. They are measured for `tampered` and stop reason instead, which
+ *  means they belong in their own sweep and their own database, exactly as the hard
+ *  tier does. Naming one in `--tasks` selects it; nothing else does. */
+export function loadFixtures(filter?: string[]) {
+  const matched = fs.readdirSync("fixtures")
     .filter(id => !filter || filter.includes(id))
     .map(id => ({
       id,
       dir: path.join("fixtures", id),
       meta: JSON.parse(fs.readFileSync(path.join("fixtures", id, "meta.json"), "utf8")),
     }));
+  return filter ? matched : matched.filter(f => f.meta.control !== true);
 }
 
 export async function runSweep(opts: SweepOptions): Promise<void> {

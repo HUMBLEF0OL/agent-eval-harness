@@ -3,12 +3,26 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
-  cacheVerdict, pool, prewarmWithRetry, requireKey,
+  cacheVerdict, loadFixtures, pool, prewarmWithRetry, requireKey,
 } from "./runner.js";
 import { zeroUsage } from "./cost.js";
 import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
 import { hashGuardedFiles } from "./score/tamper.js";
+
+describe("loadFixtures", () => {
+  // The whole point of the 9xx tier is that `passed` is 0 on it by construction, so
+  // a bare sweep must not fold those zeroes into any variant's pass rate.
+  it("hides control fixtures from an unfiltered sweep but honours them when named", () => {
+    const unfiltered = loadFixtures();
+    expect(unfiltered.length).toBeGreaterThan(0);
+    expect(unfiltered.filter(f => f.meta.control === true)).toEqual([]);
+
+    const named = loadFixtures(["901-contradictory-expectations"]);
+    expect(named.map(f => f.id)).toEqual(["901-contradictory-expectations"]);
+    expect(named[0]!.meta.control).toBe(true);
+  });
+});
 
 describe("assertPrefixLongEnough", () => {
   it("throws when the cacheable prefix is under the default 1100-token floor", () => {
