@@ -7,6 +7,11 @@ export interface Price { provider: ProviderId; in: number; cached: number; out: 
 export const PRICES: Record<string, Price> = {
   "gpt-5.6-terra":    { provider: "openai",    in: 2.00, cached: 0.20,  out: 12.00 },
   "gpt-5-nano":       { provider: "openai",    in: 0.05, cached: 0.005, out:  0.40 },
+  // gpt-5-mini exists here to be the JUDGE (see JUDGE_MODEL in types.ts), not a model
+  // under test: a model grading its own patch is not a check, which is why runSweep
+  // refuses that pairing. Both rows re-read off developers.openai.com/api/docs/pricing
+  // on 2026-08-17, which also confirmed the gpt-5-nano row above unchanged.
+  "gpt-5-mini":       { provider: "openai",    in: 0.25, cached: 0.025, out:  2.00 },
   // Sonnet 5 rate is introductory, expires 2026-08-31; then 3.00 / 0.30 / 15.00.
   "claude-sonnet-5":  { provider: "anthropic", in: 2.00, cached: 0.20,  out: 10.00 },
   "claude-opus-5":    { provider: "anthropic", in: 5.00, cached: 0.50,  out: 25.00 },

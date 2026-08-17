@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PRICES, accumulate, costUsd, zeroUsage } from "./cost.js";
-import type { UsageTotals } from "./types.js";
+import { JUDGE_MODEL, type UsageTotals } from "./types.js";
 
 const u = (p: Partial<UsageTotals>): UsageTotals => ({ ...zeroUsage(), ...p });
 
@@ -35,6 +35,15 @@ describe("costUsd", () => {
       outputTokens: 1_000_000,       // 2.50
     }));
     expect(cost).toBeCloseTo(0.30 + 0.375 + 0.03 + 2.50, 6);
+  });
+
+  it("can price the judge model, or --judge would abort every sweep it runs on", () => {
+    // JUDGE_MODEL is billed like any other call and runSweep costs it, so a missing
+    // price row here turns `--judge` into a guaranteed mid-sweep throw.
+    expect(PRICES[JUDGE_MODEL]).toBeDefined();
+    expect(() => costUsd(JUDGE_MODEL, zeroUsage())).not.toThrow();
+    // And it must not be a model under test — self-judging is not a check.
+    expect(JUDGE_MODEL).not.toBe("gpt-5-nano");
   });
 
   it("has no price entry for gpt-5.6 — unverified pricing must not be guessed", () => {

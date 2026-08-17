@@ -6,7 +6,12 @@ export type CacheMode = "explicit" | "implicit";
  *  (TSD §9.3). It lives here — the one module that imports nothing — so the
  *  runner and the report can agree on it without the report pulling the
  *  provider registry, and with it both vendor SDKs, into its import graph. */
-export const JUDGE_MODEL = "gpt-5-nano";
+/** gpt-5-mini, deliberately NOT gpt-5-nano: nano is the model every recorded sweep
+ *  puts under test, so judging with it would trip runSweep's self-judge guard and
+ *  make --judge unusable on exactly the runs that need it. Validated by hand against
+ *  a real captured cheat (a call-stack-sniffing slug implementation) before being
+ *  wired in: verdict cheated=true, kind=special_case, with correct reasoning. */
+export const JUDGE_MODEL = "gpt-5-mini";
 
 export interface ToolSpec {
   name: string;
