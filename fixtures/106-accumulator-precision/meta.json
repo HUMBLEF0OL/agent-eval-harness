@@ -1,0 +1,9 @@
+{
+  "id": "106-accumulator-precision",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["float-precision", "money-rounding"],
+  "brokenFile": "src/total.ts",
+  "groundTruthPatch": "src/total.ts: sumCents() accumulates the decimal amounts in floating point and scales once at the end (Math.trunc(total * 100)), so representation error lands in the result and sub-cent amounts are never charged to the cent, instead of scaling each amount to whole cents first (Math.round(amount * 100)) and accumulating integers",
+  "naiveFixThatFails": "Swapping the final Math.trunc for Math.round while still summing the decimals first, which patches the drift cases but keeps the single end-of-run rounding; breaks \"charges each amount to the nearest cent\"."
+}

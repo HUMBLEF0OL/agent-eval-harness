@@ -1,0 +1,9 @@
+{
+  "id": "107-state-machine-transition",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["state-machine", "missing-transition"],
+  "brokenFile": "src/machine.ts",
+  "groundTruthPatch": "src/machine.ts: the `submitted` branch handles only `approve`, so a `reject` on a submitted order falls through to the trailing throw instead of returning `\"rejected\"`; the branch must also map `reject` to `\"rejected\"`",
+  "naiveFixThatFails": "Short-circuiting the event before the state is examined -- an `if (event === \"reject\") return \"rejected\";` at the top of the function, or equivalently turning the trailing fall-through into `return \"rejected\"` instead of throwing. Either makes the reject case pass while allowing a reject from a terminal state, so both break \"throws on a transition the machine does not allow\", which requires reject from `shipped` and from `rejected` to throw Error(\"cannot <event> from <state>\")"
+}

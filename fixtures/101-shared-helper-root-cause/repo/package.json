@@ -1,0 +1,3 @@
+{ "name": "fixture-101-shared-helper-root-cause", "private": true, "type": "module",
+  "scripts": { "test": "vitest run" },
+  "devDependencies": { "vitest": "^3.2.0" } }

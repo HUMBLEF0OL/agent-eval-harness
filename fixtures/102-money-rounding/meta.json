@@ -1,0 +1,9 @@
+{
+  "id": "102-money-rounding",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["floating-point", "rounding"],
+  "brokenFile": "src/round.ts",
+  "groundTruthPatch": "src/round.ts: `Math.round(n * 100) / 100` (wrong: for decimals binary cannot represent, `n * 100` can land just under the half, so 1.005 -> 1 and 0.575 -> 0.57; and Math.round breaks ties toward +Infinity, so the exact half -2.675 -> -2.67 instead of away from zero) instead of scaling through the decimal string representation and rounding the magnitude, i.e. half-away-from-zero on Math.abs(n) with the sign reapplied (right).",
+  "naiveFixThatFails": "Nudging with a fixed epsilon, `Math.round(n * 100 + 1e-9) / 100`, fixes the positive cases (1.005 -> 1.01, 0.575 -> 0.58) but the epsilon pushes negatives toward zero (-1.005 -> -1, -2.675 -> -2.67), so the \"rounds negative half-cents away from zero\" test still fails."
+}

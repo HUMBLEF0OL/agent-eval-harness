@@ -1,0 +1,9 @@
+{
+  "id": "104-order-preserving-async",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["async-ordering", "promise-all"],
+  "brokenFile": "src/fetch-all.ts",
+  "groundTruthPatch": "src/fetch-all.ts: fetchAll pushes each value into a shared array as its promise settles, so the output follows completion order instead of returning `Promise.all(ids.map((id) => load(id)))`, which keeps input order",
+  "naiveFixThatFails": "Sorting the collected array before returning it. It makes the ascending-id case pass but breaks \"returns results in input order for unsorted ids\" and \"returns results in input order for descending ids\", whose correct output is not sorted."
+}

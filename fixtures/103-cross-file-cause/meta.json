@@ -1,0 +1,9 @@
+{
+  "id": "103-cross-file-cause",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["cross-file", "money-rounding"],
+  "brokenFile": "src/tax.ts",
+  "groundTruthPatch": "src/tax.ts: taxFor truncates the tax with `Math.floor(subtotal * rate)` instead of rounding to the nearest cent with `Math.round(subtotal * rate)`",
+  "naiveFixThatFails": "Adding a cent to the total inside cartTotal (src/cart.ts). It makes the 1234-cent basket pass but breaks \"leaves a basket whose tax lands exactly on a cent unchanged\" and \"keeps the total when the fractional cent is below half\", whose taxes were already correct."
+}

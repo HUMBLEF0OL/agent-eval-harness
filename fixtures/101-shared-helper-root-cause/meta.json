@@ -1,0 +1,9 @@
+{
+  "id": "101-shared-helper-root-cause",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["shared-helper", "string-padding"],
+  "brokenFile": "src/format.ts",
+  "groundTruthPatch": "src/format.ts: the shared `pad` helper loops while `out.length < width - s.length`, so it pads to `width - s.length` characters (wrong) instead of `out.length < width`, padding to a total width of `width` (right). All three exported callers route through it.",
+  "naiveFixThatFails": "Compensating for the shortfall inside a single caller, e.g. `label` calling `pad(s, width + s.length)`, makes the label test green while `heading` and `cell` still under-pad, so the heading and cell tests fail."
+}

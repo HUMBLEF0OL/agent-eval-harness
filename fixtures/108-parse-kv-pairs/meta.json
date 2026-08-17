@@ -1,0 +1,9 @@
+{
+  "id": "108-parse-kv-pairs",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["string-parsing", "empty-segment"],
+  "brokenFile": "src/parse-kv.ts",
+  "groundTruthPatch": "src/parse-kv.ts: each pair is split on `=` with empty segments filtered out and element [1] taken as the value, so a value containing `=` is truncated at the first one and a pair with an empty value (`key=`) is dropped by the length guard, instead of splitting without the filter and rejoining everything after the first `=` with `=`",
+  "naiveFixThatFails": "Joining the split parts back together with `=` (`parts.slice(1).join(\"=\")`) while leaving the empty-segment filter in place: it fixes the embedded-equals case but breaks \"keeps empty value segments\", because the filter still strips the empty segments so `cursor=` fails the length guard and disappears and `sig=YWJjZA==` loses its padding"
+}

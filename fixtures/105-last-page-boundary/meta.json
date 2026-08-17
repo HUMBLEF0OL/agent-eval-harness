@@ -1,0 +1,9 @@
+{
+  "id": "105-last-page-boundary",
+  "prompt": "The test suite is failing. Find the bug and fix it.",
+  "difficulty": "hard",
+  "tags": ["off-by-one", "pagination"],
+  "brokenFile": "src/paginate.ts",
+  "groundTruthPatch": "src/paginate.ts: page() treats the 1-based pageIndex as 0-based, slicing (pageIndex * pageSize, pageIndex * pageSize + pageSize) so every page is shifted forward one and the last page comes back empty, instead of slicing ((pageIndex - 1) * pageSize, pageIndex * pageSize)",
+  "naiveFixThatFails": "Subtracting one only in the slice start and leaving the duplicated end expression alone -- slice((pageIndex - 1) * pageSize, pageIndex * pageSize + pageSize) -- which returns a window twice as long as pageSize whenever more items follow the page; breaks \"returns the middle page\"."
+}
