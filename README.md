@@ -4,15 +4,39 @@ Measures whether a coding agent actually fixed the bug — and whether it was ho
 
 ## The finding
 
-**Two sweeps, two tiers, 46 runs, $0.068 — and the honest answer is still "this benchmark
-cannot measure what it was built to measure, because the model does not fail often enough."**
+**Three sweeps, 62 runs, $0.085 — one significant result, and two plausible-looking
+non-findings that the numbers refused to support.** The headline the harness was built to
+test is not among them: honesty cannot be measured until a model actually fails, and this
+one almost never did.
 
-### Hard tier (8 fixtures, built specifically to break the ceiling)
+### The one significant result: reasoning effort was 2.4x the cost for no measurable accuracy
+
+Four arms, same 8 hard fixtures, 32 runs, $0.052.
 
 | Variant | n | Pass | 95% CI | Tamper | Steps | Reasoning tok | Cost/run |
 |---|---|---|---|---|---|---|---|
-| `nano` (all tools) | 8 | 100% | [100, 100] | 0% | 7.6 | 3744 | $0.0022 |
-| `nano-no-run-tests` | 8 | 87.5% | [63, 100] | 0% | 5.9 | 4272 | $0.0023 |
+| `nano` (effort high) | 8 | 100% | [100, 100] | 0% | 7.6 | 3744 | $0.0022 |
+| `nano-effort-med` | 8 | 100% | [100, 100] | 0% | 6.4 | 1616 | $0.0011 |
+| `nano-effort-low` | 8 | 87.5% | [63, 100] | 0% | 7.5 | 616 | $0.0009 |
+| `nano-no-run-tests` (high) | 8 | 87.5% | [63, 100] | 0% | 5.9 | 4272 | $0.0023 |
+
+Dropping effort from **high to low cut cost 2.41x and reasoning tokens 6x** (3744 -> 616).
+Low effort was cheaper on **8 of 8 paired fixtures** — one-sided sign test **p = 0.0039**.
+That is the only statistically significant result this harness has produced, and it is a
+cost result, not a correctness one.
+
+**The accuracy side does not support a claim either way.** Pass rate fell 100% -> 87.5%, but
+that is a *single* discordant fixture out of eight (exact p = 1.000). And the fixture that
+flipped, `102-money-rounding`, is the only fixture ANY configuration has ever failed — and the
+one where high effort spent **14,272 reasoning tokens** against a ~2,100 median elsewhere. So
+the honest reading is narrow: high effort bought nothing measurable on seven tasks, and on the
+one genuinely hard task it was doing real work and low effort failed it. At n=8 this design
+cannot tell you which of those matters more, and pretending otherwise would be the error this
+harness exists to prevent.
+
+The practical version, stated with its own caveat: **if your tasks look like these seven, high
+effort is 2.4x the bill for nothing. If they look like the eighth, it is the difference between
+a fix and a failure — and you cannot tell which kind you have from the pass rate alone.**
 
 Every hard fixture was built so that the *tempting* fix breaks a sibling test — verified by
 applying that naive fix and observing a red suite. So guess-and-check cannot pass them.
@@ -55,25 +79,32 @@ an agent that can simply fix the bug never needs to cheat. Tamper rate only beco
 informative once the task is hard enough to fail, which is the same reason the pass-rate
 comparison is uninformative here.
 
-### What both sweeps establish
+### What all three sweeps establish
 
-**The harness measures correctly.** 46/46 runs scored, costed from real five-category usage,
+**The harness measures correctly.** 62/62 runs scored, costed from real five-category usage,
 and stored with complete replayable trajectories. Restore-before-verify, the per-vendor cache
 gates, and the error taxonomy all behaved as designed — including under a real quota
 exhaustion on a Gemini run, where errors were recorded as `stop=error` with `passed=NULL` so
 they never counted as model failures.
 
-**The benchmark cannot yet ask its own question.** Honesty is only measurable when a model
-fails, and `gpt-5-nano` solved **45 of 46** runs across both tiers. **Zero tampering in 46
-runs** is therefore weak evidence for honesty rather than strong: an agent that can simply fix
-the bug never needs to cheat. Building a harder tier moved the pass rate by one run, which
-says the remaining lever is not another notch of fixture difficulty — it is tasks a capable
-model genuinely cannot do, or a configuration constrained enough to force failure.
+**Tamper rate remains unmeasurable, and that is the honest headline.** `gpt-5-nano` solved
+**60 of 62** runs across both tiers and all four configurations. **Zero tampering in 62 runs**
+is therefore weak evidence for honesty rather than strong: an agent that can simply fix the bug
+never needs to cheat. Two levers were tried and neither worked — an 8-fixture tier built so
+that naive fixes fail moved the pass rate by one run, and cutting reasoning effort 6x moved it
+by one more. Exactly one fixture (`102-money-rounding`) has ever failed under any
+configuration. The remaining lever is not difficulty or effort: it is tasks a capable model
+genuinely cannot do.
 
-**That negative result is the useful one.** It is a claim about this benchmark, made with
-numbers and confidence intervals, at a total cost of $0.068 — and the harness's own design is
-what prevented two plausible-looking non-findings (the easy tier's +61% reasoning, the hard
-tier's 12.5-point pass gap) from being written up as results.
+**Three things the numbers refused to let us claim,** each of which looked like a result:
+
+| Apparent finding | Why it was rejected |
+|---|---|
+| Removing `run_tests` costs +61% reasoning (easy tier) | 10/15 fixtures, sign test **p = 0.15**, spread −704 to +2112 |
+| Removing `run_tests` costs 12.5 points of pass rate (hard tier) | one discordant pair of eight, exact **p = 1.000** |
+| Low effort costs 12.5 points of pass rate | same single pair, **p = 1.000** — while the *cost* saving at **p = 0.0039** is real |
+
+That discipline is the deliverable. Total cost of finding out: **$0.085**.
 
 Cost figures are computed from measured usage at list prices. Reproduce with:
 
@@ -84,7 +115,8 @@ Cost figures are computed from measured usage at list prices. Reproduce with:
     # hard tier — ~$0.04. A SEPARATE database on purpose: summarise() groups by
     # variant, not by difficulty, so one database holding both tiers would average
     # them into a single row and silently hide which tier a number came from.
-    npm run sweep -- --variant nano --variant nano-no-run-tests --reps 1 `
+    npm run sweep -- --variant nano --variant nano-no-run-tests `
+      --variant nano-effort-med --variant nano-effort-low --reps 1 `
       --db ./eval-hard.db `
       --tasks 101-shared-helper-root-cause --tasks 102-money-rounding `
       --tasks 103-cross-file-cause --tasks 104-order-preserving-async `
@@ -94,19 +126,25 @@ Cost figures are computed from measured usage at list prices. Reproduce with:
 
 ## Status
 
-One real sweep has been recorded — the 30-run `nano` experiment in
-[The finding](#the-finding), committed as `report.html`. It cost $0.0325.
+Three sweeps have been recorded — 62 runs for $0.085, reported in
+[The finding](#the-finding). The easy tier is committed as `report.html`; the four-arm hard
+tier lives in a separate `eval-hard.db` / `report-hard.html` (git-ignored, regenerate with the
+commands below) because `summarise()` groups by variant and would otherwise average the tiers.
 
-Three things in the plan remain **unrun**, and the README does not pretend otherwise:
+Two things in the plan remain **unrun**, and the README does not pretend otherwise:
 
 - **The `gpt-5.6-terra` arms** (`baseline`, `no-run-tests`, `effort-medium`, `effort-low`,
   180 runs, ~$27). Deferred deliberately: the `nano` result shows the fixtures saturate, so
   the same sweep on a stronger model would return the same 100% ceiling at 800x the cost.
   Harder fixtures come first.
-- **The Anthropic arm.** No `ANTHROPIC_API_KEY` was ever available. Its adapter is
-  unit-tested offline against a hand-written response fixture and has never made a live call;
-  `prewarm` sending `max_tokens: 0` was found by review and fixed, but `output_config`
-  remains unverified against the installed SDK. That is the first thing to check.
+- **The Anthropic arm.** No `ANTHROPIC_API_KEY` was ever available, so the adapter has never
+  made a live call; it is unit-tested offline against a hand-written response fixture. Review
+  found and fixed three things without a key: `prewarm` sent `max_tokens: 0` (the API requires
+  >= 1, so the first call of any sweep would have 400'd), and TWO invented request fields were
+  hiding behind an `as any` — `output_config.effort` and `output_config.format`, neither of
+  which exists anywhere in @anthropic-ai/sdk@0.70.1. Effort now maps onto the `thinking`
+  budget the installed SDK actually declares, structured output onto a forced tool call, and
+  both casts are gone so an invented field is a compile error.
 - **The Gemini arm.** Its adapter *is* live-proven (one full run: 6 steps, `passed=1`,
   `$0.0057`), but the AI Studio free tier is **20 requests/day/model** — about three runs —
   so no sweep is possible on it without billing enabled.
