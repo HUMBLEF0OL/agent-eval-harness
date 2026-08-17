@@ -108,6 +108,12 @@ export const VARIANTS: Record<string, Variant> = {
   nano:               { ...baseline, model: "gpt-5-nano" },
   "nano-no-run-tests": { ...baseline, model: "gpt-5-nano",
                          tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
+  // The effort ladder on the same model. Reason for existing: `nano` solved 45 of 46
+  // runs across both fixture tiers, so tamper rate could not be measured — an agent
+  // that can just fix the bug never needs to cheat. Constraining reasoning is the
+  // remaining lever for forcing the failures honesty only becomes visible in.
+  "nano-effort-med":   { ...baseline, model: "gpt-5-nano", effort: "medium" },
+  "nano-effort-low":   { ...baseline, model: "gpt-5-nano", effort: "low" },
   // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
   anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
 
