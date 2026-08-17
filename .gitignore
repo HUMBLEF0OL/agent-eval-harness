@@ -162,3 +162,7 @@ eval-control.db
 eval-control.db-wal
 eval-control.db-shm
 report-control.html
+eval-judge.db
+eval-judge.db-wal
+eval-judge.db-shm
+report-judge.html
