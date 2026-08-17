@@ -1,8 +1,11 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { assertFixtureIntact, assertPrefixLongEnough, cacheFloor, pool, requireKey } from "./runner.js";
+import {
+  assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_WINDOW, cacheVerdict, pool, requireKey,
+} from "./runner.js";
 import { zeroUsage } from "./cost.js";
+import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
 import { hashGuardedFiles } from "./score/tamper.js";
 
@@ -43,6 +46,58 @@ describe("cacheFloor", () => {
   it("raises the floor for models whose caching minimum is higher", () => {
     expect(cacheFloor({ model: "gemini-2.5-pro" })).toBe(2124);
     expect(cacheFloor({ model: "claude-haiku-4-5" })).toBe(4172);
+  });
+});
+
+describe("cacheVerdict", () => {
+  it("aborts an explicit vendor on the very first completed run that read nothing", () => {
+    const v = cacheVerdict("explicit", 1, 0);
+    expect(v).toMatch(/prompt caching is not working/);
+    // The message has to carry the evidence, not just the accusation.
+    expect(v).toMatch(/1 completed run\(s\).*explicit.*0 cached tokens.*1-run window/s);
+  });
+
+  it("says nothing about an explicit vendor that read the cache", () => {
+    expect(cacheVerdict("explicit", 1, 4096)).toBeNull();
+  });
+
+  it("does NOT abort an implicit vendor before the window closes", () => {
+    // The bug this exists to fix: Gemini legitimately reports 0 on any single
+    // run, so a sweep must survive a run of misses short of the whole window.
+    for (let runs = 1; runs < CACHE_WINDOW.implicit; runs++) {
+      expect(cacheVerdict("implicit", runs, 0)).toBeNull();
+    }
+  });
+
+  it("aborts an implicit vendor once a whole window read nothing", () => {
+    const v = cacheVerdict("implicit", CACHE_WINDOW.implicit, 0);
+    expect(v).toMatch(/8 completed run\(s\).*implicit.*8-run window/s);
+    // Actionable, and honest about what implicit caching does and does not promise.
+    expect(v).toMatch(/best-effort/);
+  });
+
+  it("says nothing when a full implicit window read the cache even once", () => {
+    expect(cacheVerdict("implicit", CACHE_WINDOW.implicit, 782)).toBeNull();
+  });
+
+  it("judges a sweep shorter than the window at its own end, not never", () => {
+    // 3 cells: the runner caps the window at the cell count, so all-zero is
+    // conclusive at run 3 — but not at run 2, and not under the default window.
+    expect(cacheVerdict("implicit", 2, 0, 3)).toBeNull();
+    expect(cacheVerdict("implicit", 3, 0, 3)).toMatch(/3 completed run\(s\).*3-run window/s);
+    expect(cacheVerdict("implicit", 3, 0)).toBeNull();
+  });
+});
+
+describe("PROVIDERS", () => {
+  it("every provider declares a cacheMode, so a fourth adapter cannot forget it", () => {
+    for (const [id, p] of Object.entries(PROVIDERS)) {
+      expect(CACHE_WINDOW[p.cacheMode], `${id} declares an unknown cacheMode`).toBeGreaterThan(0);
+    }
+    // The vendor difference the gate exists for — asserted, not assumed.
+    expect(PROVIDERS.google.cacheMode).toBe("implicit");
+    expect(PROVIDERS.openai.cacheMode).toBe("explicit");
+    expect(PROVIDERS.anthropic.cacheMode).toBe("explicit");
   });
 });
 

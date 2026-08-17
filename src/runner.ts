@@ -11,7 +11,7 @@ import { openStore, type RunRow } from "./store.js";
 import { makeTools } from "./tools.js";
 import { VARIANTS, type Variant } from "./variants.js";
 import { JUDGE_MODEL } from "./types.js";
-import type { EventInput, ProviderId, SessionConfig, UsageTotals } from "./types.js";
+import type { CacheMode, EventInput, ProviderId, SessionConfig, UsageTotals } from "./types.js";
 
 export interface SweepOptions {
   variants: string[];
@@ -77,6 +77,37 @@ export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 
       `Lengthen SYSTEM_PROMPT with useful tool-use guidance — not filler.`,
     );
   }
+}
+
+/** How many completed runs of evidence the cache gate needs before a zero means
+ *  anything. Explicit vendors set a cache key or breakpoint and a warm prefix
+ *  reads reliably, so one run is already proof. Implicit caching (Gemini 2.5+)
+ *  is best-effort with no control surface: measured on gemini-2.5-flash, two of
+ *  three recorded sessions read nothing while the third read the full prefix, so
+ *  a single zero says nothing and a per-run assert would abort a healthy sweep. */
+export const CACHE_WINDOW: Record<CacheMode, number> = { explicit: 1, implicit: 8 };
+
+/** Returns an abort message when the evidence is conclusive, else null.
+ *  Explicit: one completed run with no cache read is already conclusive.
+ *  Implicit: only a whole window of completed runs with ZERO cache reads in
+ *  aggregate is conclusive — one miss is normal and must not abort a sweep.
+ *  `window` is passed in so a variant with fewer cells than the window is judged
+ *  at its own end rather than never: a 3-run sweep that never caches must fail. */
+export function cacheVerdict(
+  mode: CacheMode,
+  completedRuns: number,
+  aggregateCacheReadTokens: number,
+  window = CACHE_WINDOW[mode],
+): string | null {
+  if (aggregateCacheReadTokens > 0 || completedRuns < window) return null;
+  return `prompt caching is not working: ${completedRuns} completed run(s) of a vendor with ` +
+    `${mode} caching read ${aggregateCacheReadTokens} cached tokens in aggregate, over a ` +
+    `${window}-run window. Every cost number in this sweep would be wrong. Aborting. ` +
+    (mode === "explicit"
+      ? `Check the cache key / breakpoints in the adapter and that the prefix is byte-stable.`
+      : `Implicit caching is best-effort, so this is a whole window of misses, not variance: ` +
+        `check the prefix is byte-stable and long enough for this model, and that runs are not ` +
+        `spaced far enough apart for the cache to expire.`);
 }
 
 /** The fixture's `repo/` is the restore source scoreTests copies test files back
@@ -202,7 +233,10 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
     for (const { name, variant, provider, cfg } of warmed) {
       const cells = fixtures.flatMap(f =>
         Array.from({ length: opts.reps }, (_, rep) => ({ fixture: f, rep })));
-      let cacheChecked = false;
+      // Cache-integrity evidence for this variant. The window is capped at the
+      // cell count so a short sweep is judged at its end rather than never.
+      const cacheWindow = Math.min(CACHE_WINDOW[provider.cacheMode], cells.length);
+      let cacheRuns = 0, cacheReads = 0, cacheProven = false;
 
       await pool(cells, opts.concurrency, async ({ fixture, rep }) => {
         const runId = `${fixture.id}:${name}:${rep}`;
@@ -267,14 +301,15 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
           // Only a run that actually completed says anything about caching: a
           // first cell that died at turn 1 (a 429 on fan-out) or refused has
           // cacheReadTokens 0 for reasons that have nothing to do with the cache.
-          if (!cacheChecked && scorable) {
-            cacheChecked = true;
-            if (result.usage.cacheReadTokens === 0) {
-              throw new Error(
-                `[${name}] cacheReadTokens is 0 after a full run — prompt caching is not ` +
-                `working. Every cost number in this sweep would be wrong. Aborting.`,
-              );
-            }
+          // Once any cache read is seen the mechanism is proven for this variant,
+          // so stop accumulating; until then, abort as soon as the window's worth
+          // of zeroes makes the verdict conclusive.
+          if (!cacheProven && scorable) {
+            cacheRuns++;
+            cacheReads += result.usage.cacheReadTokens;
+            cacheProven = cacheReads > 0;
+            const verdict = cacheVerdict(provider.cacheMode, cacheRuns, cacheReads, cacheWindow);
+            if (verdict) throw new Error(`[${name}] ${verdict}`);
           }
 
           const row: RunRow = {

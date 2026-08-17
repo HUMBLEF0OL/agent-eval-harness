@@ -306,6 +306,17 @@ export const googleProvider: Provider = {
   // A bare literal, like both peers: ProviderId must be the thing that ties this
   // id to the PROVIDERS key, so a typo here is a compile error, not a lookup miss.
   id: "google",
+  // Implicit: 2.5+ caching is best-effort with no control surface (no
+  // cache_control, no routing key) and Google guarantees no hit. Measured over
+  // three recorded sessions against gemini-2.5-flash, identical ~1380-token
+  // prefix, each preceded by a prewarm:
+  //   session 1  turn1 cacheRead 0    turn2 0
+  //   session 2  turn1 cacheRead 782  turn2 0     (598 input + 782 = 1380, the prefix)
+  //   session 3  turn1 cacheRead 0    turn2 0
+  // Session 2 proves the mechanism and the normalisation; the other two prove a
+  // single zero is normal. Hence the runner's windowed gate — a per-run assert
+  // would abort a healthy sweep roughly two attempts in three.
+  cacheMode: "implicit",
   start: (cfg, task) => new GoogleSession(cfg, task),
   async complete(cfg, prompt, schema) {
     const maxOutputTokens = 2000;

@@ -116,6 +116,9 @@ class OpenAISession implements Session {
 
 export const openaiProvider: Provider = {
   id: "openai",
+  // prompt_cache_key pins the routing, so a warm prefix reads reliably: one
+  // completed run reporting zero is a real failure, not variance.
+  cacheMode: "explicit",
   start: (cfg, task) => new OpenAISession(cfg, task),
   async complete(cfg, prompt, schema) {
     const res = await client.responses.create({

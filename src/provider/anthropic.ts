@@ -133,6 +133,9 @@ class AnthropicSession implements Session {
 
 export const anthropicProvider: Provider = {
   id: "anthropic",
+  // cache_control breakpoints are placed by this adapter (§6.1), so a warm
+  // prefix reads reliably: one completed run reporting zero is a real failure.
+  cacheMode: "explicit",
   start: (cfg, task) => new AnthropicSession(cfg, task),
   async complete(cfg, prompt, schema) {
     const res = await client().messages.create({

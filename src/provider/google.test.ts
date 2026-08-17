@@ -190,6 +190,28 @@ describe("thinkingBudgetFor", () => {
   });
 });
 
+import { readFileSync } from "node:fs";
+
+describe("recorded real response", () => {
+  it("normalises the live gemini-2.5-flash turn, thoughts ADDED and no cached field", () => {
+    const raw = JSON.parse(readFileSync("recorded/google-turn1.json", "utf8"));
+    const m = raw.usageMetadata;
+    // The captured turn carries NO cachedContentTokenCount, so this is also the
+    // missing-field path: `?? 0` must leave inputTokens equal to the prompt count.
+    expect(m.cachedContentTokenCount).toBeUndefined();
+
+    const u = normaliseUsage(raw);
+    expect(u.outputTokens).toBe(m.candidatesTokenCount + m.thoughtsTokenCount);   // the ADD: ~13x on cost here
+    expect(u.reasoningTokens).toBe(m.thoughtsTokenCount);
+    expect(u.inputTokens).toBe(m.promptTokenCount - (m.cachedContentTokenCount ?? 0));
+    expect(u.cacheReadTokens).toBe(0);
+    // The documented identity, checked against a real Developer-API response
+    // rather than against the fixture above: 1380 + 10 + 22 = 1412, so on this
+    // response candidates EXCLUDES thoughts and the `+ thoughts` is right.
+    expect(usageArithmeticHolds(m)).toBe(true);
+  });
+});
+
 describe("mapTools", () => {
   it("nests every declaration inside ONE tool", () => {
     const tools = mapTools(ALL_TOOLS);

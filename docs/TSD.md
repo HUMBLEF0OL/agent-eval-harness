@@ -598,6 +598,7 @@ All three vendors cache on a **prefix match** — any byte change invalidates ev
 | | Anthropic | OpenAI | Google |
 |---|---|---|---|
 | Mechanism | Explicit `cache_control` breakpoints, max 4 per request | Automatic on any qualifying prefix | Implicit, on by default for 2.5+ models. No breakpoint to place, and explicit caching is not used |
+| `Provider.cacheMode` | `"explicit"` | `"explicit"` | `"implicit"` — see §6.5 |
 | Minimum prefix | 512 (Opus 5) / 1024 (Sonnet 5) / 4096 (Haiku 4.5) | 1024, and documented as inconsistent just above the threshold | 1024 (2.5 Flash / Flash-Lite) / 2048 (2.5 Pro) |
 | TTL | 5 minutes | 30 minutes | Not documented as a fixed number |
 | Routing under parallelism | n/a | `prompt_cache_key` — without it, parallel requests can land on different machines and miss | n/a — no routing key is exposed |
@@ -711,9 +712,30 @@ If the prompt lands short, it gains genuinely useful content — explicit tool-u
 
 **Check 2 — caching is actually happening.**
 
-After the second turn of the first run of a variant, assert `cacheReadTokens > 0` and abort the sweep loudly if not. Both vendors fail silently; this assertion is the only thing standing between a silent cache miss and a study whose entire cost axis is wrong by 5×.
+Over the first *completed* runs of a variant (a run that refused or errored says nothing about the cache), accumulate `cacheReadTokens` and abort the sweep loudly if a whole window of them reads nothing. Every vendor fails silently; this assertion is the only thing standing between a silent cache miss and a study whose entire cost axis is wrong by 5×. How wide that window may be is the vendor's property, not the runner's guess — see §6.5.
 
 Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execute continuously with far less than 5 minutes between requests, so no scheduled re-warm is needed on either. Google does not document a fixed TTL for implicit caching; the same continuous-execution argument applies, and Check 2 would catch it if it did not.
+
+### 6.5 Explicit vs implicit caching, and why Check 2 is windowed
+
+`Provider.cacheMode` carries the difference, so the runner never special-cases a provider id:
+
+- **`"explicit"`** (OpenAI, Anthropic) — the adapter sets a cache key (`prompt_cache_key`) or a breakpoint (`cache_control`), and a warm prefix reliably reports a read. One completed run with `cacheReadTokens: 0` is already conclusive, so the gate keeps its original fail-fast behaviour: `CACHE_WINDOW.explicit = 1`.
+- **`"implicit"`** (Google) — 2.5+ caching is best-effort with no control surface and no guarantee of a hit. A single zero is normal.
+
+Measured, three recorded sessions against `gemini-2.5-flash` with an identical ~1380-token prefix, each preceded by a pre-warm:
+
+| session | turn 1 `cacheReadTokens` | turn 2 |
+|---|---|---|
+| 1 | 0 | 0 |
+| 2 | **782** | 0 |
+| 3 | 0 | 0 |
+
+Session 2 proves both the mechanism and the normalisation — 598 uncached input + 782 cached = 1380, the whole prefix. Sessions 1 and 3 prove that any individual run may legitimately read nothing. A per-run assert would therefore have aborted a *healthy* Gemini sweep at run 1 on roughly two attempts in three, blaming prompt caching when nothing was wrong, and each false abort burns free-tier quota (250 requests/day).
+
+So for implicit vendors only a *sustained* zero is evidence: `CACHE_WINDOW.implicit = 8` completed runs whose `cacheReadTokens` sum to 0. The moment any run reads the cache, the mechanism is proven for that variant and checking stops. If a variant has fewer cells than the window, the window is capped at the cell count and the verdict is reached at the end of the variant instead of never — a 3-run sweep that never caches must still fail, just not before the evidence exists.
+
+`cacheVerdict(mode, completedRuns, aggregateCacheReadTokens, window)` in `runner.ts` is the whole rule, pure and unit-tested; the abort message states the evidence (mode, runs observed, aggregate reads, window), not just "caching is not working".
 
 ---
 

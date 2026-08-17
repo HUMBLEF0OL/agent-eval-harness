@@ -14,6 +14,7 @@ export interface FakeProvider extends Provider {
 export function makeFakeProvider(script: ScriptedStep[]): FakeProvider {
   const p: FakeProvider = {
     id: "openai",
+    cacheMode: "explicit",     // matches the id it claims; keeps loop/demo behaviour unchanged
     lastResults: null,
     prewarmUsage: { ...zeroUsage(), inputTokens: 1500 },
     start(_cfg: SessionConfig, _task: string): Session {

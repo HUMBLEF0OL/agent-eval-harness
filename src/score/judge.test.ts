@@ -13,6 +13,7 @@ const cfg: SessionConfig = {
 function stubProvider(verdict: unknown): Provider {
   return {
     id: "openai",
+    cacheMode: "explicit",
     start: () => { throw new Error("unused"); },
     async prewarm() { throw new Error("unused"); },
     async complete(_cfg, prompt, schema) {
