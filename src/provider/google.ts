@@ -10,34 +10,32 @@ import type {
  *  file exists rather than being folded into one of them:
  *
  *  1. USAGE ARITHMETIC (see normaliseUsage). Gemini is a THIRD distinct shape.
- *     There was one disputed claim in the wild — a third-party source said that
+ *     There is one unresolved claim in the wild — a third-party source says that
  *     on the Gemini Developer API `candidatesTokenCount` already INCLUDES the
  *     thinking tokens, while on Vertex it does not. That contradicts the SDK's
  *     own doc comment on `totalTokenCount`, which sums thoughts SEPARATELY from
- *     candidates.
+ *     candidates. No offline evidence settles it, so instead of guessing,
+ *     `usageArithmeticHolds` re-derives the documented identity from every real
+ *     response and normaliseUsage warns ONCE if it ever fails. That turns a
+ *     silent 2x output-token overcount into a loud line on the first live call.
  *
- *     SETTLED, and this comment is the record of it. The header used to say
- *     "whoever makes that call writes the answer HERE"; it was made, so here it
- *     is. On 2026-08-16 three live `generateContent` calls (thinkingBudget 1024,
- *     trivial prompt) were run by hand at a shell with a Developer API key —
- *     NOT by this repo's gate, which still makes no network call:
+ *     STILL UNANSWERED, and this comment is the record that it is. One live
+ *     generateContent with thinking on decides it outright: send any prompt,
+ *     read usageMetadata, and see whether `usageArithmeticHolds` is true of it.
+ *     Nothing in this repo's gate makes that call and no run of it is recorded
+ *     anywhere here. If it comes back "candidates INCLUDES thoughts", delete the
+ *     `+ thoughts` in normaliseUsage and flip the outputTokens assertion in
+ *     google.test.ts — until then the `+` follows the SDK's own documented
+ *     identity, the only evidence that exists.
  *
- *       gemini-2.5-flash       prompt=9 candidates=7 thoughts=95  total=111
- *       gemini-3.5-flash-lite  prompt=9 candidates=9 thoughts=118 total=136
- *       gemini-3.5-flash       prompt=9 candidates=9 thoughts=58  total=76
- *
- *     Every row satisfies total === prompt + candidates + thoughts, so the SDK
- *     doc is right and the third-party claim is wrong on the Developer API too:
- *     candidatesTokenCount EXCLUDES thoughts and normaliseUsage must ADD them.
- *     Note the magnitude — 7 answer tokens against 95 thinking tokens. Getting
- *     this backwards would have mis-billed output by ~13x on that turn, not 2x.
- *
- *     `usageArithmeticHolds` stays anyway, and so does the one-shot warning: the
- *     verdict was measured on the Developer API on three models on one day, and
- *     Vertex, other models and future surfaces are still unmeasured. It is now a
- *     regression tripwire rather than an open question. If it ever fires, delete
- *     the `+ thoughts` in normaliseUsage and flip the outputTokens assertion in
- *     google.test.ts.
+ *     Commit bc4d657 briefly wrote "SETTLED" here on the strength of three
+ *     generateContent calls someone ran by hand outside this gate. That is one
+ *     unreproduced hand-run observation, not repo evidence: nothing checked in
+ *     reproduces it, and two of the three models it cited exist nowhere else in
+ *     this codebase — not in PRICES, not in VARIANTS, not in the TSD. The same
+ *     standard that keeps gemini-2.5-pro out of PRICES keeps it out of here, so
+ *     the question stays open and the tripwire below stays a tripwire. This
+ *     paragraph exists so the claim is not silently re-landed a third time.
  *
  *  2. SELF-THROTTLING (see throttle/withRetry). The free tier is ~10 RPM for
  *     2.5 Flash — below what a single worker generates — so the adapter paces

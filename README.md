@@ -69,17 +69,17 @@ Three adapters ship behind the same two-method interface (`start` → `step`, pl
 | `src/provider/anthropic.ts` | Messages | **No** — same, for `recorded/anthropic-turn2.json`. |
 | `src/provider/google.ts` | `generateContent` | **No** — its responses are inline in the tests. |
 
-**No test, fixture or number in this repo is derived from a live API call**, and the five
-gate commands make no network call: every response the tests see comes from a mocked SDK.
+**No artifact in this repo — test, fixture, number or sentence — is derived from a live API
+call.** That is a claim about what is checked in, and it is checkable: every response the
+tests see comes from a mocked SDK, and the five gate commands make no network call. It is
+deliberately *not* a claim about what anyone has ever run at a shell with a key of their own,
+which this file has no way to attest to. Everything below is what the offline tests establish,
+and nothing more.
 
-There is exactly **one** exception, and it is a sentence rather than an artifact. The
-disputed `candidatesTokenCount` question (TSD §5.3) was settled by hand at a shell with a
-Gemini Developer API key on 2026-08-16 — three `generateContent` calls with thinking on,
-outside this repo's gate — and the verdict, with the observed token counts, is written into
-the header of `src/provider/google.ts`. Verdict: `candidatesTokenCount` **excludes** thoughts
-on the Developer API too, so the adapter's `+ thoughtsTokenCount` is right. Nothing else here
-comes from a live call; the adapter's fixtures stayed hand-written, and no run, cost or pass
-rate anywhere in this repo was measured against a live model.
+One live call is still *owed*, and `src/provider/google.ts` says so in its header: the disputed
+`candidatesTokenCount` question (TSD §5.3) is settled outright by a single `generateContent`
+with thinking on. Its answer is recorded nowhere in this repo, which means it is unanswered
+here — a hand-run observation someone cannot reproduce from this tree does not change that.
 
 The recorded response fixtures — `recorded/openai-turn2.json` and
 `recorded/anthropic-turn2.json` — are hand-written, not live captures, because no API key
@@ -99,13 +99,12 @@ different in every vendor and silently wrong if you assume otherwise:
 - **Google** — `promptTokenCount` includes cached (subtract), and `candidatesTokenCount`
   *excludes* thoughts (add).
 
-That last row was the one disputed claim: a third-party source said Gemini's
-`candidatesTokenCount` already includes thinking tokens on the Developer API, contradicting
-the SDK's own documentation. Three live calls settled it in the SDK's favour (numbers in the
-`google.ts` header). `usageArithmeticHolds()` still re-derives the documented token identity
-from every real response and warns once if it ever fails — now a regression tripwire for the
-surfaces that measurement did not cover, since a 2.5-Flash turn there spent 95 thinking
-tokens against 7 answer tokens and getting this backwards is not a rounding error.
+One unresolved question is encoded rather than papered over: a third-party source claims
+Gemini's `candidatesTokenCount` already includes thinking tokens on the Developer API,
+contradicting the SDK's own documentation. Without a key that cannot be settled, so
+`usageArithmeticHolds()` re-derives the documented token identity from every real response
+and warns once if it ever fails — a loud signal on the first live call instead of output
+tokens quietly counted twice.
 
 The Google adapter also throttles itself (~9 RPM by default, `GEMINI_MIN_INTERVAL_MS`) and
 retries 429/5xx with backoff, because the Gemini free tier is roughly 10 RPM — below what
