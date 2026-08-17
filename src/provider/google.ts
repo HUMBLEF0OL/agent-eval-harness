@@ -1,6 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import type {
-  Effort, Provider, ProviderId, Session, SessionConfig, Step, StopReason,
+  Effort, Provider, Session, SessionConfig, Step, StopReason,
   ToolCall, ToolResult, ToolSpec, UsageTotals,
 } from "../types.js";
 
@@ -10,23 +10,34 @@ import type {
  *  file exists rather than being folded into one of them:
  *
  *  1. USAGE ARITHMETIC (see normaliseUsage). Gemini is a THIRD distinct shape.
- *     There is one unresolved claim in the wild — a third-party source says that
+ *     There was one disputed claim in the wild — a third-party source said that
  *     on the Gemini Developer API `candidatesTokenCount` already INCLUDES the
  *     thinking tokens, while on Vertex it does not. That contradicts the SDK's
  *     own doc comment on `totalTokenCount`, which sums thoughts SEPARATELY from
- *     candidates. No offline evidence settles it, so instead of guessing,
- *     `usageArithmeticHolds` re-derives the documented identity from every real
- *     response and normaliseUsage warns ONCE if it ever fails. That turns a
- *     silent 2x output-token overcount into a loud line on the first live call.
+ *     candidates.
  *
- *     STILL UNANSWERED, and this comment is the record that it is. One live
- *     generateContent with thinking on decides it outright: send any prompt,
- *     read usageMetadata, and see whether `usageArithmeticHolds` is true of it.
- *     Nothing in this repo's gate makes that call and no run of it is recorded
- *     anywhere here. Whoever makes it writes the answer HERE. If it comes back
- *     "candidates INCLUDES thoughts", delete the `+ thoughts` in normaliseUsage
- *     and flip the outputTokens assertion in google.test.ts — until then the `+`
- *     follows the SDK's own documented identity, the only evidence that exists.
+ *     SETTLED, and this comment is the record of it. The header used to say
+ *     "whoever makes that call writes the answer HERE"; it was made, so here it
+ *     is. On 2026-08-16 three live `generateContent` calls (thinkingBudget 1024,
+ *     trivial prompt) were run by hand at a shell with a Developer API key —
+ *     NOT by this repo's gate, which still makes no network call:
+ *
+ *       gemini-2.5-flash       prompt=9 candidates=7 thoughts=95  total=111
+ *       gemini-3.5-flash-lite  prompt=9 candidates=9 thoughts=118 total=136
+ *       gemini-3.5-flash       prompt=9 candidates=9 thoughts=58  total=76
+ *
+ *     Every row satisfies total === prompt + candidates + thoughts, so the SDK
+ *     doc is right and the third-party claim is wrong on the Developer API too:
+ *     candidatesTokenCount EXCLUDES thoughts and normaliseUsage must ADD them.
+ *     Note the magnitude — 7 answer tokens against 95 thinking tokens. Getting
+ *     this backwards would have mis-billed output by ~13x on that turn, not 2x.
+ *
+ *     `usageArithmeticHolds` stays anyway, and so does the one-shot warning: the
+ *     verdict was measured on the Developer API on three models on one day, and
+ *     Vertex, other models and future surfaces are still unmeasured. It is now a
+ *     regression tripwire rather than an open question. If it ever fires, delete
+ *     the `+ thoughts` in normaliseUsage and flip the outputTokens assertion in
+ *     google.test.ts.
  *
  *  2. SELF-THROTTLING (see throttle/withRetry). The free tier is ~10 RPM for
  *     2.5 Flash — below what a single worker generates — so the adapter paces
@@ -294,10 +305,9 @@ class GoogleSession implements Session {
 }
 
 export const googleProvider: Provider = {
-  // ProviderId is still "openai" | "anthropic" in types.ts. Widening it also
-  // means filling in PROVIDERS in provider/index.ts — that is the wiring change
-  // landing next, and this file must not break `tsc` before it does.
-  id: "google" as unknown as ProviderId,
+  // A bare literal, like both peers: ProviderId must be the thing that ties this
+  // id to the PROVIDERS key, so a typo here is a compile error, not a lookup miss.
+  id: "google",
   start: (cfg, task) => new GoogleSession(cfg, task),
   async complete(cfg, prompt, schema) {
     const maxOutputTokens = 2000;
