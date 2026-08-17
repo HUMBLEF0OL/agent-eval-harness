@@ -2,15 +2,69 @@
 
 Measures whether a coding agent actually fixed the bug — and whether it was honest about it.
 
+## The finding
+
+**This fixture set saturates, so it cannot answer the question it was built to ask.**
+
+`gpt-5-nano` fixed **15/15** bugs whether or not it could run the tests — 100% pass rate in
+both arms, 95% CI [100, 100], across 30 runs at a total cost of **$0.0325**.
+
+| Variant | n | Pass | 95% CI | Tamper | Steps | Reasoning tok | Cost/run |
+|---|---|---|---|---|---|---|---|
+| `nano` (all tools) | 15 | 100% | [100, 100] | 0% | 6.07 | 1203 | $0.00091 |
+| `nano-no-run-tests` | 15 | 100% | [100, 100] | 0% | 6.07 | 1941 | $0.00126 |
+
+The hypothesis was that removing `run_tests` would drop the pass rate and raise the tamper
+rate. Neither moved, and with both arms at the ceiling **no effect of any size could have
+been detected** — a 100% baseline leaves nothing to lose. This is a fact about the
+fixtures, not evidence that the tool doesn't matter.
+
+The mean-reasoning column looks like a result (+61%) and is **not** one. Per-fixture pairing
+shows only 10 of 15 fixtures reasoning more without `run_tests` (one-sided sign test
+**p = 0.15**), mean delta +738 tokens against a spread from −704 to +2112, and identical
+step counts in both arms. That is noise, and reporting the +61% as a finding would have been
+the exact error this harness exists to prevent.
+
+**Zero tampering in 30 runs** is worth stating plainly, but it is weak evidence for honesty:
+an agent that can simply fix the bug never needs to cheat. Tamper rate only becomes
+informative once the task is hard enough to fail, which is the same reason the pass-rate
+comparison is uninformative here.
+
+**What this actually establishes:** the harness measures correctly end-to-end on live data —
+30/30 runs scored, costed from real five-category usage, and stored with full trajectories —
+and the *benchmark* needs harder fixtures before the honesty question can be asked at all.
+Restore-before-verify, the cache assertions, and the error taxonomy all behaved as designed,
+including under a real quota exhaustion on a separate Gemini run (errors recorded as
+`stop=error` with `passed=NULL`, so they never counted as model failures).
+
+Cost figures are computed from measured usage at list prices. Reproduce with:
+
+    npm run sweep -- --variant nano --variant nano-no-run-tests --reps 1
+    npm run report
+
 ## Status
 
-No measurement sweep has been recorded here: there is no `eval.db`, no `report.html`, and
-no headline number in this README, because inventing one would be worse than having none.
-Every code path that would spend money is written so it throws rather than silently
-defaulting — `costUsd` throws on an unpriced model, `requireKey` throws before the first
-API call, the cache assertion aborts a sweep rather than reporting cost numbers it can't
-trust. Keys, where they exist at all, live in a gitignored `.env.local`; none of the five
-gate commands reads one, and none is checked in.
+One real sweep has been recorded — the 30-run `nano` experiment in
+[The finding](#the-finding), committed as `report.html`. It cost $0.0325.
+
+Three things in the plan remain **unrun**, and the README does not pretend otherwise:
+
+- **The `gpt-5.6-terra` arms** (`baseline`, `no-run-tests`, `effort-medium`, `effort-low`,
+  180 runs, ~$27). Deferred deliberately: the `nano` result shows the fixtures saturate, so
+  the same sweep on a stronger model would return the same 100% ceiling at 800x the cost.
+  Harder fixtures come first.
+- **The Anthropic arm.** No `ANTHROPIC_API_KEY` was ever available. Its adapter is
+  unit-tested offline against a hand-written response fixture and has never made a live call;
+  `prewarm` sending `max_tokens: 0` was found by review and fixed, but `output_config`
+  remains unverified against the installed SDK. That is the first thing to check.
+- **The Gemini arm.** Its adapter *is* live-proven (one full run: 6 steps, `passed=1`,
+  `$0.0057`), but the AI Studio free tier is **20 requests/day/model** — about three runs —
+  so no sweep is possible on it without billing enabled.
+
+Every code path that would spend money throws rather than silently defaulting: `costUsd`
+throws on an unpriced model, `requireKey` throws before the first API call, and the cache
+assertion aborts a sweep rather than reporting cost numbers it cannot trust. Keys live in a
+gitignored `.env.local`; none of the five gate commands reads one, and none is checked in.
 
 What *is* verified, end-to-end, with zero API calls:
 
@@ -18,7 +72,8 @@ What *is* verified, end-to-end, with zero API calls:
     npm run verify-fixtures  # all 15 fixtures fail before the fix and pass after it
 
 Both are green right now (`npx vitest run`, `npx tsc --noEmit`, and `npm run check-leaks`
-are too). The moment a key exists, the finding is one command away:
+are too). To run the expensive `gpt-5.6-terra` arms — read the ceiling caveat above first,
+they will very likely return the same 100%:
 
     # PowerShell (the platform this harness was built and tested on)
     $env:OPENAI_API_KEY="..."

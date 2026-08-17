@@ -144,8 +144,9 @@ vite.config.ts.timestamp-*
 
 # agent-eval-harness
 eval.db
+eval.db-wal
+eval.db-shm
 eval.db-journal
 smoke.db
-report.html
 node_modules/
 .aeh-tmp/

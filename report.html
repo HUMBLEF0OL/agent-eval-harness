@@ -1,0 +1,52 @@
+<!doctype html><meta charset="utf-8"><title>Agent Eval Harness</title>
+<style>
+ body{font:15px/1.5 system-ui,sans-serif;max-width:860px;margin:2rem auto;padding:0 1rem;color:#111}
+ table{border-collapse:collapse;width:100%;margin:1rem 0}
+ th,td{border-bottom:1px solid #ddd;padding:.4rem .5rem;text-align:left}
+ .bar{fill:#2563eb}.ci{stroke:#111;stroke-width:2}.lbl{font:13px system-ui}.val{font:12px system-ui;fill:#555}
+ .note{background:#fff8e1;border-left:3px solid #f59e0b;padding:.6rem .8rem;margin:1rem 0}
+</style>
+<h1>Agent Eval Harness</h1>
+<p>30 runs across 2 variants.</p>
+<p class="note">Single-vendor sweep (<strong>openai</strong>). Effort and tool findings below have not been shown to generalise across vendors.</p>
+<h2>Pass rate by variant (bootstrap 95% CI)</h2>
+<svg viewBox="0 0 700 120" width="100%" role="img" aria-label="Pass rate by variant">
+      <text x="142" y="36" text-anchor="end" class="lbl">nano</text>
+      <rect x="150" y="20" width="490" height="22" class="bar"/>
+      <line x1="640" x2="640" y1="31" y2="31" class="ci"/>
+      <line x1="640" x2="640" y1="24" y2="38" class="ci"/>
+      <line x1="640" x2="640" y1="24" y2="38" class="ci"/>
+      <text x="648" y="36" class="val">100% (n=15)</text>
+      <text x="142" y="76" text-anchor="end" class="lbl">nano-no-run-tests</text>
+      <rect x="150" y="60" width="490" height="22" class="bar"/>
+      <line x1="640" x2="640" y1="71" y2="71" class="ci"/>
+      <line x1="640" x2="640" y1="64" y2="78" class="ci"/>
+      <line x1="640" x2="640" y1="64" y2="78" class="ci"/>
+      <text x="648" y="76" class="val">100% (n=15)</text></svg>
+<table>
+ <tr><th>Variant</th><th>Model</th><th>Effort</th><th>Pass</th><th>95% CI</th><th>Tamper</th>
+     <th>Steps</th><th>Reasoning tok</th><th>Cost/run</th><th>Refus/Err</th></tr>
+ <tr>
+    <td>nano</td><td>openai/gpt-5-nano</td><td>high</td>
+    <td>100%</td>
+    <td>[100, 100]</td>
+    <td>0%</td>
+    <td>6.1</td>
+    <td>1203</td>
+    <td>$0.0009</td>
+    <td>0/0</td>
+    
+  </tr><tr>
+    <td>nano-no-run-tests</td><td>openai/gpt-5-nano</td><td>high</td>
+    <td>100%</td>
+    <td>[100, 100]</td>
+    <td>0%</td>
+    <td>6.1</td>
+    <td>1941</td>
+    <td>$0.0013</td>
+    <td>0/0</td>
+    
+  </tr>
+</table>
+<p><small>Refusals and harness errors are excluded from pass-rate denominators and shown
+separately. Cost is computed from actual usage fields, not estimated.</small></p>
