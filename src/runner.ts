@@ -91,6 +91,35 @@ export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 
   }
 }
 
+/** A pre-warm reporting ZERO prompt tokens is a vendor flake, not a short prompt, and it
+ *  must not kill a sweep that is about to spend money. Measured on gpt-5-nano: it happened
+ *  on 2 of 5 observed pre-warms, both times on a cache key's FIRST use, and the identical
+ *  request retried immediately reported 1285 prompt tokens. Retries are near-free (one
+ *  pre-warm is ~1285 input tokens, well under a hundredth of a cent) so the trade is
+ *  lopsided. A genuinely short prefix returns non-zero and is NOT retried — it falls
+ *  straight through to assertPrefixLongEnough's real message. */
+export async function prewarmWithRetry(
+  name: string,
+  provider: { prewarm(cfg: SessionConfig): Promise<UsageTotals> },
+  cfg: SessionConfig,
+  attempts = 3,
+  sleep: (ms: number) => Promise<void> = ms => new Promise(r => setTimeout(r, ms)),
+): Promise<UsageTotals> {
+  let warm = zeroUsage();
+  for (let i = 1; i <= attempts; i++) {
+    warm = await provider.prewarm(cfg);
+    if (promptTokens(warm) > 0) return warm;
+    if (i < attempts) {
+      console.error(
+        `[${name}] pre-warm attempt ${i}/${attempts} reported zero prompt tokens — ` +
+        `a known vendor flake on a cold cache key. Retrying.`,
+      );
+      await sleep(500 * i);
+    }
+  }
+  return warm;   // all zeros: let assertPrefixLongEnough raise the real diagnosis
+}
+
 /** How many completed runs of evidence the cache gate needs before a zero means
  *  anything. Explicit vendors set a cache key or breakpoint and a warm prefix
  *  reads reliably, so one run is already proof. Implicit caching (Gemini 2.5+)
@@ -259,7 +288,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
       tools: variant.tools, maxTokensPerTurn: 16000, cacheKey: name, maxSteps: opts.maxSteps,
     };
     console.log(`[${name}] pre-warming cache…`);
-    assertPrefixLongEnough(name, await provider.prewarm(cfg), cacheFloor(variant));   // strictly before fan-out
+    assertPrefixLongEnough(name, await prewarmWithRetry(name, provider, cfg), cacheFloor(variant));
     warmed.push({ name, variant, provider, cfg });
   }
 

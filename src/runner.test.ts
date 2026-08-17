@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
-  cacheVerdict, pool, requireKey,
+  cacheVerdict, pool, prewarmWithRetry, requireKey,
 } from "./runner.js";
 import { zeroUsage } from "./cost.js";
 import { PROVIDERS } from "./provider/index.js";
@@ -47,6 +47,47 @@ describe("assertPrefixLongEnough", () => {
     expect(() => assertPrefixLongEnough("gemini-pro", warm)).not.toThrow();
     expect(() => assertPrefixLongEnough("gemini-pro", warm, 2124))
       .toThrow(/1200 tokens, below this variant's 2124-token floor/);
+  });
+});
+
+describe("prewarmWithRetry", () => {
+  const cfg = { model: "gpt-5-nano", effort: "low", systemPrompt: "s", tools: [],
+                maxTokensPerTurn: 16000, cacheKey: "k" } as never;
+  const noSleep = async () => {};
+
+  it("retries a zero-usage pre-warm and returns the first real reading", async () => {
+    // The live failure: two sweeps died at startup because a cold cache key's first
+    // pre-warm reported nothing, while the identical request retried reported 1285.
+    const readings = [zeroUsage(), zeroUsage(), { ...zeroUsage(), inputTokens: 1285 }];
+    let calls = 0;
+    const provider = { prewarm: async () => readings[calls++]! };
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const warm = await prewarmWithRetry("nano", provider, cfg, 3, noSleep);
+      expect(warm.inputTokens).toBe(1285);
+      expect(calls).toBe(3);
+      expect(warned).toHaveBeenCalledTimes(2);
+    } finally { warned.mockRestore(); }
+  });
+
+  it("does NOT retry a prefix that is merely short — that is a real failure", async () => {
+    let calls = 0;
+    const provider = { prewarm: async () => { calls++; return { ...zeroUsage(), inputTokens: 800 }; } };
+    const warm = await prewarmWithRetry("nano", provider, cfg, 3, noSleep);
+    expect(calls).toBe(1);
+    // Falls through to the floor check, which is the correct diagnosis for 800 tokens.
+    expect(() => assertPrefixLongEnough("nano", warm)).toThrow(/Lengthen SYSTEM_PROMPT/);
+  });
+
+  it("gives up after the attempt cap and lets the real diagnosis through", async () => {
+    let calls = 0;
+    const provider = { prewarm: async () => { calls++; return zeroUsage(); } };
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const warm = await prewarmWithRetry("nano", provider, cfg, 3, noSleep);
+      expect(calls).toBe(3);
+      expect(() => assertPrefixLongEnough("nano", warm)).toThrow(/NO prompt tokens at all/);
+    } finally { warned.mockRestore(); }
   });
 });
 
