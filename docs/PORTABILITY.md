@@ -28,6 +28,7 @@ Two things here are genuinely platform-sensitive, and both sit on the measuremen
 | `forceConsistentCasingInFileNames` | `tsconfig.json` | Windows and macOS resolve imports case-insensitively, Linux does not. Set explicitly so a mismatch fails here rather than only in CI |
 | Platform-stable output | `scripts/check-leaks.mjs` | the "allowed directory" string is a literal `src/provider`, not `path.join(...)`, which used to print `src\provider/` on Windows and `src/provider/` on Linux |
 | Sandboxes under `<repo>/.aeh-tmp/` | `src/sandbox.ts` | a Windows constraint kept deliberately: Node's ESM resolver will not cross drive letters, and `os.tmpdir()` is on `C:` while a repo may be on `E:`. Harmless on POSIX, where it is simply a directory — but the *reason* is Windows-only, and it is written down so nobody "simplifies" it back to `os.tmpdir()` |
+| Node major axis | `.github/workflows/gates.yml` | `package.json` declares `engines: >=22`, so Node 22 is pinned on all three OSes and the newest major (26) additionally runs on Linux. An untested version claim is not a claim, and the native `better-sqlite3` build is the thing a Node major realistically breaks |
 | Matrix CI | `.github/workflows/gates.yml` | runs the five zero-cost gates on `ubuntu-latest`, `windows-latest` and `macos-latest`, `fail-fast: false` so a red Linux does not hide the macOS answer |
 
 ## What has been verified, and how
@@ -39,8 +40,11 @@ Verified locally, on Windows:
   `npx tsc --noEmit`, `npm test` (192 tests), `npm run check-leaks`, `npm run demo` and
   `npm run verify-fixtures` (27 fixtures, 7 of them controls) were all run green against it.
   This is the strongest available local proxy: it removes line endings as a variable entirely.
-- **Static audits.** No `shell: true` outside of nothing at all; no `process.platform` or
-  `win32` branch anywhere in `src/` or `scripts/`; every relative import resolves to an
+- **Static audits.** No `shell: true` anywhere at all; exactly one `process.platform`
+  branch in the whole repo, the drive-letter case in `src/tools.test.ts` that asserts
+  rejection on win32 and acceptance on POSIX (see the matrix findings below) — every
+  other check is written to be platform-blind rather than platform-branched; every
+  relative import resolves to an
   on-disk filename with exactly matching case; every path handed outward is separator-
   normalised.
 - **The leak guard still fires** after being made platform-stable, re-checked by planting a
@@ -90,7 +94,12 @@ somewhere else, which is the argument for the matrix existing at all.
 
 ## Standing limitation
 
-CI proves the committed tree on the three GitHub runner images. It says nothing about
-other libc implementations (Alpine/musl), other architectures (arm64 Linux), or Node
-versions other than 22 — the workflow pins a single version deliberately, because the
-question it answers is "does this work off Windows", not "does this work everywhere".
+CI proves the committed tree on the three GitHub runner images, on Node 22 everywhere and
+Node 26 on Linux. Node 26 on **Windows** is covered locally rather than in CI: all five
+gates were run green on v26.3.0 on the development machine, which is the same platform the
+matrix already covers on 22 — so no OS is left with only one Node major behind it.
+
+What it still says nothing about: other libc implementations (Alpine/musl), other
+architectures (arm64 Linux), and Node majors between 22 and 26. Those stay out of scope
+deliberately — the question this answers is "does this work off Windows, on the Node
+versions package.json promises", not "does this work everywhere".
