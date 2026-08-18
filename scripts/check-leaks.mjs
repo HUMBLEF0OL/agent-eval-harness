@@ -5,7 +5,11 @@ import { join, relative, sep } from "node:path";
 // bare `import "x"`, dynamic `import("x")`, `require("x")` — and any subpath
 // (`openai/resources`), because each of those bypassed the old `from`-only regex.
 const VENDOR = /\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk|@google\/genai)(?:\/[^"']*)?["']/;
-const ALLOWED = join("src", "provider");
+// A display string, deliberately NOT path.join: joining produced "src\provider" on
+// Windows and "src/provider" on Linux, so this script's own output differed by platform
+// and read as the mixed "src\provider/" once the trailing slash was appended. The
+// comparison below still uses path.sep, because that one is about real paths.
+const ALLOWED = "src/provider";
 const offenders = [];
 
 function walk(dir) {
@@ -14,7 +18,7 @@ function walk(dir) {
     if (statSync(p).isDirectory()) { walk(p); continue; }
     if (!p.endsWith(".ts")) continue;
     if (relative("src", p).split(sep)[0] === "provider") continue;
-    if (VENDOR.test(readFileSync(p, "utf8"))) offenders.push(p);
+    if (VENDOR.test(readFileSync(p, "utf8"))) offenders.push(p.split(sep).join("/"));
   }
 }
 

@@ -1,0 +1,3 @@
+# Scoring SHA-256s fixture file bytes, so line endings must not vary by platform.
+# Every tracked file here is text (.ts/.json/.md/.mjs/.html), so no binary escapes.
+* text=auto eol=lf

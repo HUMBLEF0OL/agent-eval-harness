@@ -4,6 +4,10 @@
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "strict": true,
+    // Windows and macOS resolve imports case-insensitively; Linux does not. Without
+    // this, `from "./Cost.js"` compiles here and fails only in CI. TypeScript 5
+    // defaults it on, but it is set explicitly because portability depends on it.
+    "forceConsistentCasingInFileNames": true,
     "noUncheckedIndexedAccess": true,
     "esModuleInterop": true,
     "skipLibCheck": true,

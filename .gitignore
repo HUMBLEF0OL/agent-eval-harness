@@ -166,3 +166,15 @@ eval-judge.db
 eval-judge.db-wal
 eval-judge.db-shm
 report-judge.html
+
+# Sweep databases and generated reports. Globbed rather than listed one by one:
+# five ad-hoc names accumulated during measurement and each new one had to be
+# remembered, which is how eval-budget-smoke.db and report-control-final.html ended
+# up untracked-but-visible in a portability commit. report.html is the ONE committed
+# report (the recorded finding) so it is force-included below.
+eval*.db
+eval*.db-wal
+eval*.db-shm
+smoke*.db*
+report-*.html
+!report.html

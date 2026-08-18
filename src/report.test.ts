@@ -73,8 +73,17 @@ describe("report entrypoint", () => {
       store.upsertRun(run({ id: "1" }));
       store.close();
 
-      const res = spawnSync("npx", ["tsx", "src/report.ts", `"${db}"`, `"${out}"`],
-        { cwd: HARNESS_ROOT, encoding: "utf8", shell: true });
+      // No `npx`, no shell, no hand-quoted arguments. `npx` is a .cmd on Windows and
+      // needs a shell to resolve, but a shell means the arguments get re-parsed by
+      // cmd.exe or /bin/sh — so the paths had to be wrapped in quotes that each shell
+      // then strips differently. Running tsx's own CLI entry through process.execPath
+      // (the same trick src/sandbox.ts uses for vitest) removes the shell from the
+      // picture entirely: argv is passed as an array, so a path containing a space
+      // needs no quoting and behaves identically on Windows, Linux and macOS. It also
+      // silences the last DEP0190 warning in the suite.
+      const TSX_CLI = path.join(HARNESS_ROOT, "node_modules", "tsx", "dist", "cli.mjs");
+      const res = spawnSync(process.execPath, [TSX_CLI, "src/report.ts", db, out],
+        { cwd: HARNESS_ROOT, encoding: "utf8" });
 
       expect(res.status, res.stderr).toBe(0);
       expect(fs.existsSync(out), `no file written; stdout: ${res.stdout}`).toBe(true);

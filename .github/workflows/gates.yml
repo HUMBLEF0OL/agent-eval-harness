@@ -1,0 +1,28 @@
+name: gates
+
+on: [push, pull_request]
+
+jobs:
+  gates:
+    # fail-fast off: "does it work off Windows" is the question, so a red Linux
+    # must not hide the macOS answer.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      # The five gates. None reads an API key or makes a network call (README
+      # §"What is verified, end-to-end, with zero API calls"), which is exactly
+      # what makes them runnable here.
+      - run: npx tsc --noEmit
+      - run: npm test
+      - run: npm run check-leaks
+      - run: npm run demo
+      - run: npm run verify-fixtures
