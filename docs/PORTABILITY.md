@@ -46,20 +46,51 @@ Verified locally, on Windows:
 - **The leak guard still fires** after being made platform-stable, re-checked by planting a
   probe and observing exit 1 with a forward-slashed path.
 
-## What has NOT been verified
+## Verified on all three platforms
 
-**The suite has never executed on Linux or macOS.** No WSL is available on the development
-machine, so there is no local POSIX runtime to run it in. The LF-equivalence run above removes
-line endings from the equation and the audits remove the patterns that usually break, but
-neither is the same as a green Linux run.
+`.github/workflows/gates.yml` run **32116604567** on `feat/agent-eval-harness`:
 
-`.github/workflows/gates.yml` is the mechanism that closes this, and **it proves nothing until
-the branch is pushed** — a workflow file in an unpushed branch has never run. Until then, the
-correct summary is: *portable by construction and by audit, unproven by execution.*
+| Job | npm ci | tsc | test | check-leaks | demo | verify-fixtures |
+|---|---|---|---|---|---|---|
+| ubuntu-latest | ok | ok | ok | ok | ok | ok |
+| macos-latest | ok | ok | ok | ok | ok | ok |
+| windows-latest | ok | ok | ok | ok | ok | ok |
 
-Two specific things CI is expected to catch that local work cannot:
+All six steps green on every OS, including `verify-fixtures`, which reported
+"all fixtures fail before and pass after, and all 7 control fixture(s) stay red" on
+each. That also settles the two things flagged as untestable locally:
+`better-sqlite3` builds and loads on all three runner images, and the tsconfig casing
+guard held.
 
-- `better-sqlite3` is a native module and is rebuilt per platform by `npm ci`. It compiles on
-  all three in principle; whether it does on these runner images is untested here.
-- Case-sensitivity regressions in future edits, which is exactly why the tsconfig flag is
-  explicit rather than left to the TypeScript 5 default.
+Local runs show a higher test count than CI (193 vs ubuntu's 175) for a mundane
+reason worth writing down so nobody chases it: the working tree carries an unrelated
+in-flight feature whose tests are not committed. CI runs the committed tree.
+
+### What the matrix caught that local work could not
+
+Two real defects, neither of which the LF-equivalence run or the static audits could
+have found:
+
+1. **A test that encoded the platform instead of the property.** `resolveInRoot` was
+   asserted to reject `C:\Windows\System32\config`. On POSIX a drive letter means
+   nothing and a backslash is a legal filename character, so that string is a
+   *relative* name resolving inside root — and accepting it is correct. Windows passed,
+   ubuntu and macOS failed. The case is now split: escapes-everywhere in the shared
+   table, a genuinely-absolute sibling of root built from `os.tmpdir()`, and the
+   drive-letter case asserting rejection on win32 and acceptance on POSIX.
+2. **A test committed without its implementation.** Staging `src/tools.test.ts`
+   wholesale swept in an uncommitted symlink-escape test while the `realpath` guard it
+   exercises stayed unstaged. The committed tree therefore tested a feature it did not
+   contain, and CI went red on all three platforms while the identical suite passed
+   locally. `git add <file>` stages the file, not the hunks you had in mind — in a tree
+   holding someone else's work in progress, that is how a pair gets separated.
+
+Both are the kind of failure that is invisible until something actually runs the code
+somewhere else, which is the argument for the matrix existing at all.
+
+## Standing limitation
+
+CI proves the committed tree on the three GitHub runner images. It says nothing about
+other libc implementations (Alpine/musl), other architectures (arm64 Linux), or Node
+versions other than 22 — the workflow pins a single version deliberately, because the
+question it answers is "does this work off Windows", not "does this work everywhere".
