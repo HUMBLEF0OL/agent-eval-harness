@@ -12,6 +12,7 @@ const OPTIONS = {
   "keep-temp": { type: "boolean", default: false },
   db:          { type: "string",  default: "./eval.db" },
   "max-steps": { type: "string",  default: "30" },
+  "max-live-usd": { type: "string" },
   judge:       { type: "boolean", default: false },
 } as const;
 
@@ -76,13 +77,30 @@ function positiveInt(flag: string, raw: string): number {
   return n;
 }
 
-await runSweep({
-  variants: values.variant ?? ["baseline"],
-  reps: positiveInt("reps", values.reps!),
-  tasks: values.tasks,
-  concurrency: positiveInt("concurrency", values.concurrency!),
-  keepTemp: values["keep-temp"]!,
-  db: values.db!,
-  maxSteps: positiveInt("max-steps", values["max-steps"]!),
-  judge: values.judge!,
-});
+function positiveFinite(flag: string, raw: string): number {
+  const n = Number(raw);
+  if (!Number.isFinite(n) || n <= 0) {
+    console.error(`--${flag} must be a positive finite number, got: ${raw}`);
+    process.exit(2);
+  }
+  return n;
+}
+
+try {
+  await runSweep({
+    variants: values.variant ?? ["baseline"],
+    reps: positiveInt("reps", values.reps!),
+    tasks: values.tasks,
+    concurrency: positiveInt("concurrency", values.concurrency!),
+    keepTemp: values["keep-temp"]!,
+    db: values.db!,
+    maxSteps: positiveInt("max-steps", values["max-steps"]!),
+    maxLiveUsd: values["max-live-usd"] === undefined
+      ? undefined
+      : positiveFinite("max-live-usd", values["max-live-usd"]),
+    judge: values.judge!,
+  });
+} catch (error) {
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exitCode = 1;
+}

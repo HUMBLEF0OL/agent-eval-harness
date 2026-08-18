@@ -1,4 +1,5 @@
 import OpenAI from "openai";
+import { costUsd, maxOpenAIRequestCostUsd } from "../cost.js";
 import type {
   Provider, Session, SessionConfig, Step, StopReason,
   ToolCall, ToolResult, ToolSpec, UsageTotals,
@@ -9,9 +10,54 @@ import type {
 // (mapTools/normaliseUsage/mapStop/extractToolCalls) never need a client —
 // the placeholder fallback keeps `import`able in a no-credentials environment
 // without ever being used for a real call.
-const client = new OpenAI({ apiKey: process.env["OPENAI_API_KEY"] ?? "sk-no-key-set" });
+const client = new OpenAI({
+  apiKey: process.env["OPENAI_API_KEY"] ?? "sk-no-key-set",
+  maxRetries: 0,
+});
 
 type Res = OpenAI.Responses.Response;
+
+async function budgetedResponse(
+  cfg: SessionConfig,
+  maxOutputTokens: number,
+  dispatch: () => Promise<Res>,
+): Promise<{ res: Res; usage: UsageTotals }> {
+  const budget = cfg.liveBudget;
+  if (!budget) {
+    const res = await dispatch();
+    return { res, usage: normaliseUsage(res) };
+  }
+
+  const estimate = maxOpenAIRequestCostUsd(cfg.model, maxOutputTokens);
+  const reservation = budget.tryReserve(estimate);
+  if (!reservation) {
+    const { remainingUsd } = budget.snapshot();
+    throw new Error(
+      `live budget exhausted: request needs up to $${estimate.toFixed(6)}, ` +
+      `but only $${remainingUsd.toFixed(6)} remains`,
+    );
+  }
+
+  let res: Res;
+  try {
+    res = await dispatch();
+  } catch (error) {
+    reservation.quarantine();
+    throw error;
+  }
+
+  try {
+    const usage = normaliseUsage(res);
+    const observedTokens = usage.inputTokens + usage.cacheWriteTokens + usage.cacheReadTokens
+      + usage.outputTokens;
+    if (observedTokens === 0) reservation.quarantine();
+    else reservation.settle(costUsd(cfg.model, usage));
+    return { res, usage };
+  } catch (error) {
+    reservation.quarantine();
+    throw error;
+  }
+}
 
 export function mapTools(tools: ToolSpec[]) {
   return tools.map(t => ({
@@ -89,7 +135,8 @@ class OpenAISession implements Session {
       }
     }
 
-    const res = await client.responses.create({
+    const { res, usage } = await budgetedResponse(this.cfg, this.cfg.maxTokensPerTurn, async () =>
+      await client.responses.create({
       model: this.cfg.model,
       instructions: this.cfg.systemPrompt,
       input: this.input,
@@ -99,7 +146,8 @@ class OpenAISession implements Session {
       store: false,
       include: ["reasoning.encrypted_content"],   // required to carry reasoning with store:false
       prompt_cache_key: this.cfg.cacheKey,
-    } as any) as Res;
+      } as any) as Res,
+    );
 
     // EVERY output item, reasoning included. Dropping reasoning is silent and degrades the agent.
     this.input.push(...(res.output as any[]));
@@ -108,7 +156,7 @@ class OpenAISession implements Session {
       stop: mapStop(res),
       text: textOf(res),
       toolCalls: extractToolCalls(res),
-      usage: normaliseUsage(res),
+      usage,
       raw: res,
     };
   }
@@ -116,32 +164,37 @@ class OpenAISession implements Session {
 
 export const openaiProvider: Provider = {
   id: "openai",
-  // prompt_cache_key pins the routing, so a warm prefix reads reliably: one
-  // completed run reporting zero is a real failure, not variance.
-  cacheMode: "explicit",
+  // prompt_cache_key improves routing affinity but does not guarantee that the
+  // first request after a pre-warm hits. A live keyed request missed, so only a
+  // sustained window of zero reads is evidence that automatic caching is broken.
+  cacheMode: "implicit",
   start: (cfg, task) => new OpenAISession(cfg, task),
   async complete(cfg, prompt, schema) {
-    const res = await client.responses.create({
-      model: cfg.model,
-      reasoning: { effort: "low" },
-      max_output_tokens: 2000,
-      store: false,
-      input: prompt,
-      text: { format: { type: "json_schema", name: "verdict", schema, strict: true } },
-    } as any) as Res;
-    return { value: JSON.parse(textOf(res)), usage: normaliseUsage(res) };
+    const { res, usage } = await budgetedResponse(cfg, 2000, async () =>
+      await client.responses.create({
+        model: cfg.model,
+        reasoning: { effort: "low" },
+        max_output_tokens: 2000,
+        store: false,
+        input: prompt,
+        text: { format: { type: "json_schema", name: "verdict", schema, strict: true } },
+      } as any) as Res,
+    );
+    return { value: JSON.parse(textOf(res)), usage };
   },
   async prewarm(cfg) {
-    const res = await client.responses.create({
-      model: cfg.model,
-      instructions: cfg.systemPrompt,
-      input: "warmup",
-      tools: mapTools(cfg.tools),
-      reasoning: { effort: "low" },
-      max_output_tokens: 16,
-      store: false,
-      prompt_cache_key: cfg.cacheKey,
-    } as any) as Res;
-    return normaliseUsage(res);
+    const { usage } = await budgetedResponse(cfg, 16, async () =>
+      await client.responses.create({
+        model: cfg.model,
+        instructions: cfg.systemPrompt,
+        input: "warmup",
+        tools: mapTools(cfg.tools),
+        reasoning: { effort: "low" },
+        max_output_tokens: 16,
+        store: false,
+        prompt_cache_key: cfg.cacheKey,
+      } as any) as Res,
+    );
+    return usage;
   },
 };

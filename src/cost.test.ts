@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { PRICES, accumulate, costUsd, zeroUsage } from "./cost.js";
+import {
+  LiveBudgetLedger, PRICES, accumulate, costUsd, maxOpenAIRequestCostUsd, zeroUsage,
+} from "./cost.js";
 import { JUDGE_MODEL, type UsageTotals } from "./types.js";
 
 const u = (p: Partial<UsageTotals>): UsageTotals => ({ ...zeroUsage(), ...p });
@@ -67,5 +69,75 @@ describe("accumulate", () => {
       inputTokens: 11, cacheWriteTokens: 7, cacheReadTokens: 5,
       outputTokens: 7, reasoningTokens: 3,
     });
+  });
+});
+
+describe("LiveBudgetLedger", () => {
+  it("rejects caps too large for safe integer nanodollar accounting", () => {
+    expect(() => new LiveBudgetLedger(1e308)).toThrow(/safe nanodollar range/);
+  });
+
+  it("never reserves beyond the shared cap under concurrent admissions", async () => {
+    const ledger = new LiveBudgetLedger(0.25);
+    let openGate!: () => void;
+    const gate = new Promise<void>(resolve => { openGate = resolve; });
+
+    const attempts = [0.10, 0.10, 0.10].map(async estimatedUsd => {
+      await gate;
+      return ledger.tryReserve(estimatedUsd);
+    });
+
+    openGate();
+    const reservations = await Promise.all(attempts);
+
+    expect(reservations.filter(r => r !== null)).toHaveLength(2);
+    expect(reservations.filter(r => r === null)).toHaveLength(1);
+    expect(ledger.snapshot().reservedUsd).toBeCloseTo(0.20);
+    expect(ledger.snapshot().remainingUsd).toBeCloseTo(0.05);
+  });
+
+  it("settles at actual cost and releases the unused reservation", () => {
+    const ledger = new LiveBudgetLedger(0.25);
+    const reservation = ledger.tryReserve(0.20);
+
+    expect(reservation).not.toBeNull();
+    reservation!.settle(0.08);
+
+    expect(ledger.snapshot()).toEqual({
+      capUsd: 0.25,
+      spentUsd: 0.08,
+      reservedUsd: 0,
+      quarantinedUsd: 0,
+      remainingUsd: 0.17,
+    });
+  });
+
+  it("quarantines a failed request reservation instead of releasing it", () => {
+    const ledger = new LiveBudgetLedger(0.25);
+    const reservation = ledger.tryReserve(0.20);
+
+    expect(reservation).not.toBeNull();
+    reservation!.quarantine();
+
+    expect(ledger.snapshot()).toEqual({
+      capUsd: 0.25,
+      spentUsd: 0,
+      reservedUsd: 0,
+      quarantinedUsd: 0.20,
+      remainingUsd: 0.05,
+    });
+    expect(ledger.tryReserve(0.06)).toBeNull();
+  });
+});
+
+describe("maxOpenAIRequestCostUsd", () => {
+  it("reserves the full verified context plus configured output", () => {
+    expect(maxOpenAIRequestCostUsd("gpt-5-nano", 16_000)).toBeCloseTo(0.0264, 8);
+    expect(maxOpenAIRequestCostUsd("gpt-5-mini", 2_000)).toBeCloseTo(0.104, 8);
+  });
+
+  it("rejects priced models without a verified hard-budget profile", () => {
+    expect(() => maxOpenAIRequestCostUsd("gpt-5.6-terra", 16_000))
+      .toThrow(/no verified OpenAI hard-budget profile/);
   });
 });

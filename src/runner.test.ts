@@ -217,8 +217,18 @@ describe("PROVIDERS", () => {
     }
     // The vendor difference the gate exists for — asserted, not assumed.
     expect(PROVIDERS.google.cacheMode).toBe("implicit");
-    expect(PROVIDERS.openai.cacheMode).toBe("explicit");
+    expect(PROVIDERS.openai.cacheMode).toBe("implicit");
     expect(PROVIDERS.anthropic.cacheMode).toBe("explicit");
+  });
+
+  it("does not convict OpenAI automatic caching from one ordinary miss", () => {
+    const warned = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      expect(cacheVerdict(PROVIDERS.openai.cacheMode, 1, 0, 1)).toBeNull();
+      expect(warned).toHaveBeenCalledWith(expect.stringMatching(/INSUFFICIENT EVIDENCE/));
+    } finally {
+      warned.mockRestore();
+    }
   });
 });
 

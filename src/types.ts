@@ -45,6 +45,23 @@ export interface UsageTotals {
   reasoningTokens: number;
 }
 
+export interface LiveBudgetReservation {
+  readonly reservedUsd: number;
+  settle(actualUsd: number): void;
+  quarantine(): void;
+}
+
+export interface LiveBudget {
+  tryReserve(estimatedUsd: number): LiveBudgetReservation | null;
+  snapshot(): Readonly<{
+    capUsd: number;
+    spentUsd: number;
+    reservedUsd: number;
+    quarantinedUsd: number;
+    remainingUsd: number;
+  }>;
+}
+
 export type StopReason = "end_turn" | "tool_use" | "max_tokens" | "refusal";
 
 export interface Step {
@@ -62,6 +79,7 @@ export interface SessionConfig {
   tools: ToolSpec[];
   maxTokensPerTurn: number;
   cacheKey: string;
+  liveBudget?: LiveBudget;
 }
 
 export interface Session {

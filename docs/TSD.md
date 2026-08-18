@@ -713,7 +713,7 @@ If the prompt lands short, it gains genuinely useful content — explicit tool-u
 
 **Check 2 — caching is actually happening.**
 
-Over the first *completed* runs of a variant (a run that refused or errored says nothing about the cache), accumulate `cacheReadTokens` and abort the sweep loudly if a whole window of them reads nothing. Every vendor fails silently; this assertion is the only thing standing between a silent cache miss and a study whose entire cost axis is wrong by 5×. How wide that window may be is the vendor's property, not the runner's guess — see §6.5.
+Over the first *completed* runs of a variant (a run that refused or errored says nothing about the cache), accumulate `cacheReadTokens` and abort the sweep loudly if a whole window of them reads nothing. Every vendor fails silently; this assertion is the only thing standing between a silent cache miss and a study whose entire cost axis is wrong by 5×. How wide that window may be is the vendor's property, not the runner's guess — see §6.5. The completed run is persisted before this verdict, so an abort never leaves a paid trajectory as orphaned events.
 
 Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execute continuously with far less than 5 minutes between requests, so no scheduled re-warm is needed on either. Google does not document a fixed TTL for implicit caching; the same continuous-execution argument applies, and Check 2 would catch it if it did not.
 
@@ -721,8 +721,8 @@ Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execut
 
 `Provider.cacheMode` carries the difference, so the runner never special-cases a provider id:
 
-- **`"explicit"`** (OpenAI, Anthropic) — the adapter sets a cache key (`prompt_cache_key`) or a breakpoint (`cache_control`), and a warm prefix reliably reports a read. One completed run with `cacheReadTokens: 0` is already conclusive, so the gate keeps its original fail-fast behaviour: `CACHE_WINDOW.explicit = 1`.
-- **`"implicit"`** (Google) — 2.5+ caching is best-effort with no control surface and no guarantee of a hit. A single zero is normal.
+- **`"explicit"`** (Anthropic) — the adapter sets a `cache_control` breakpoint and a warm prefix reliably reports a read. One completed run with `cacheReadTokens: 0` is already conclusive, so the gate keeps its original fail-fast behaviour: `CACHE_WINDOW.explicit = 1`.
+- **`"implicit"`** (OpenAI, Google) — caching is automatic and has no guarantee of a hit. OpenAI's `prompt_cache_key` improves routing affinity but is not an explicit cache breakpoint; a live keyed request missed immediately after a successful pre-warm. A single zero is normal.
 
 Measured, three recorded sessions against `gemini-2.5-flash` with an identical ~1380-token prefix, each preceded by a pre-warm:
 
@@ -736,7 +736,7 @@ Session 2 proves both the mechanism and the normalisation — 598 uncached input
 
 So for implicit vendors only a *sustained* zero is evidence: `CACHE_WINDOW.implicit = 8` completed runs whose `cacheReadTokens` sum to 0. The moment any run reads the cache, the mechanism is proven for that variant and checking stops. If a variant has fewer cells than the window, the window is capped at the cell count and the verdict is reached at the end of the variant instead of never — a 5-run sweep that never caches must still fail, just not before the evidence exists.
 
-That cap has a floor under it: `CACHE_MIN_EVIDENCE = 4`. Capping the window at the cell count is right for a 5-cell sweep and wrong for a 1-cell one, because it collapses straight back to the single-run gate this whole section exists to remove — verified live, `--tasks 001-off-by-one --reps 1` aborted with "1 completed run(s) … over a 1-run window", breaking the cheapest pre-flight command the plan prescribes. Below the threshold an implicit vendor's whole-window zero is **insufficient evidence**: `cacheVerdict` writes a one-line `[cache] INSUFFICIENT EVIDENCE` warning to stderr naming the run count and returns `null`, so the sweep runs and the operator knows the cost axis is unverified for caching. At or above the threshold a whole-window zero aborts as before. Explicit vendors are unaffected: one completed run reading zero still aborts immediately.
+That cap has a floor under it: `CACHE_MIN_EVIDENCE = 4`. Capping the window at the cell count is right for a 5-cell sweep and wrong for a 1-cell one, because it collapses straight back to the single-run gate this whole section exists to remove — verified live on both Google and OpenAI, where one ordinary miss aborted the cheapest pre-flight command. Below the threshold an implicit vendor's whole-window zero is **insufficient evidence**: `cacheVerdict` writes a one-line `[cache] INSUFFICIENT EVIDENCE` warning to stderr naming the run count and returns `null`, so the sweep runs and the operator knows the cost axis is unverified for caching. At or above the threshold a whole-window zero aborts as before. Explicit vendors are unaffected: one completed run reading zero still aborts immediately.
 
 `cacheVerdict(mode, completedRuns, aggregateCacheReadTokens, window)` in `runner.ts` is the whole rule, pure apart from that one warning and unit-tested; the abort message states the evidence (mode, runs observed, aggregate reads, window), not just "caching is not working".
 
@@ -1081,8 +1081,9 @@ Vendor-condition mapping is in §5.3 and happens entirely in the adapters. A ven
 | `--concurrency` | 4 | CLI |
 | `--keep-temp` | false | CLI |
 | `--db` | `./eval.db` | CLI |
+| `--max-live-usd` | unset | CLI. Optional hard per-invocation cap; currently supported for `gpt-5-nano` and the `gpt-5-mini` judge. |
 
-`--reps`, `--concurrency`, and `--max-steps` are validated as positive integers in `cli.ts` and exit non-zero naming the flag otherwise. `Number("abc")` is `NaN` and `--concurrency 0` makes the worker pool run nothing: either would otherwise produce a sweep that measures zero cells and exits 0, which reads as success.
+`--reps`, `--concurrency`, and `--max-steps` are validated as positive integers in `cli.ts`; `--max-live-usd` is validated as a positive finite number. Invalid values exit non-zero naming the flag. `Number("abc")` is `NaN` and `--concurrency 0` makes the worker pool run nothing: either would otherwise produce a sweep that measures zero cells and exits 0, which reads as success.
 
 Key checks happen at variant-selection time, before the first fixture is copied — and now before `openStore`, so a sweep that cannot run leaves no empty `eval.db` (plus WAL) behind. Together with a `costUsd(model, zeroUsage())` price preflight, everything that can refuse the sweep refuses it before the first token is bought:
 

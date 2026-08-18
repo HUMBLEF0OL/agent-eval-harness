@@ -1,6 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { costUsd, promptTokens, zeroUsage } from "./cost.js";
+import { LiveBudgetLedger, costUsd, maxOpenAIRequestCostUsd, promptTokens, zeroUsage } from "./cost.js";
 import { runLoop, type LoopConfig } from "./loop.js";
 import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
@@ -21,6 +21,8 @@ export interface SweepOptions {
   keepTemp: boolean;
   db: string;
   maxSteps: number;
+  /** Hard upper bound on live-provider spend authorized by this invocation. */
+  maxLiveUsd?: number;
   /** Opt-in stretch (TSD §9.3): runs the LLM cheat judge over the source-side
    *  diff. Off by default — it is an extra billed call on every run and
    *  cannot be exercised without a key. */
@@ -92,17 +94,21 @@ export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 
 }
 
 /** A pre-warm reporting ZERO prompt tokens is a vendor flake, not a short prompt, and it
- *  must not kill a sweep that is about to spend money. Measured on gpt-5-nano: it happened
- *  on 2 of 5 observed pre-warms, both times on a cache key's FIRST use, and the identical
- *  request retried immediately reported 1285 prompt tokens. Retries are near-free (one
- *  pre-warm is ~1285 input tokens, well under a hundredth of a cent) so the trade is
- *  lopsided. A genuinely short prefix returns non-zero and is NOT retried — it falls
- *  straight through to assertPrefixLongEnough's real message. */
+ *  must not kill a sweep that is about to spend money. Observed repeatedly on gpt-5-nano:
+ *  the identical request retried reports a normal ~1285-token prefix. The first estimate
+ *  was "2 of 5, only on a cold cache key" and BOTH halves of that were wrong — it has
+ *  since burned three consecutive attempts on a WARM key and aborted a sweep at startup,
+ *  which is why the cap is 6 rather than 3 and the backoff is linear rather than flat.
+ *  Retries are effectively free (one pre-warm is ~1285 input tokens, well under a
+ *  hundredth of a cent against a sweep that costs dollars), so the trade is lopsided:
+ *  over-retrying costs nothing, under-retrying loses the whole run.
+ *  A genuinely short prefix returns non-zero and is NOT retried — it falls straight
+ *  through to assertPrefixLongEnough's real message, which says the opposite thing. */
 export async function prewarmWithRetry(
   name: string,
   provider: { prewarm(cfg: SessionConfig): Promise<UsageTotals> },
   cfg: SessionConfig,
-  attempts = 3,
+  attempts = 6,
   sleep: (ms: number) => Promise<void> = ms => new Promise(r => setTimeout(r, ms)),
 ): Promise<UsageTotals> {
   let warm = zeroUsage();
@@ -262,6 +268,8 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
   const fixtures = loadFixtures(opts.tasks);
   if (fixtures.length === 0) throw new Error("no fixtures matched --tasks");
   if (opts.judge) requireKey("openai");     // the judge always calls OpenAI (JUDGE_MODEL)
+  const liveBudget = opts.maxLiveUsd === undefined ? undefined : new LiveBudgetLedger(opts.maxLiveUsd);
+  if (opts.judge && liveBudget) maxOpenAIRequestCostUsd(JUDGE_MODEL, 2000);
 
   // Every reason a sweep can refuse to start is checked here, before openStore:
   // a sweep that cannot run must not leave an empty eval.db (plus its WAL files)
@@ -271,8 +279,12 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
     if (!variant) throw new Error(`unknown variant: ${name}`);
     const provider = PROVIDERS[variant.provider];
     if (!provider) throw new Error(`unknown provider ${variant.provider} in variant ${name}`);
+    if (liveBudget && variant.provider !== "openai") {
+      throw new Error(`variant ${name}: hard live-budget enforcement currently supports OpenAI only`);
+    }
     requireKey(variant.provider);          // fail before spending an hour
     costUsd(variant.model, zeroUsage());   // throws on an unpriced model — before any spend
+    if (liveBudget) maxOpenAIRequestCostUsd(variant.model, 16000);
     if (opts.judge && variant.model === JUDGE_MODEL) {
       throw new Error(`variant ${name}: judge model ${JUDGE_MODEL} equals the model under ` +
         `test — a self-judged run is not a check. Pick a different JUDGE_MODEL.`);
@@ -294,6 +306,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
     const cfg: LoopConfig = {
       model: variant.model, effort: variant.effort, systemPrompt: variant.systemPrompt,
       tools: variant.tools, maxTokensPerTurn: 16000, cacheKey: name, maxSteps: opts.maxSteps,
+      liveBudget,
     };
     console.log(`[${name}] pre-warming cache…`);
     assertPrefixLongEnough(name, await prewarmWithRetry(name, provider, cfg), cacheFloor(variant));
@@ -357,6 +370,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
               const judgeCfg: SessionConfig = {
                 model: JUDGE_MODEL, effort: "low", systemPrompt: "", tools: [],
                 maxTokensPerTurn: 2000, cacheKey: `${runId}-judge`,
+                liveBudget,
               };
               try {
                 const judged = await judgeSourceCheat(PROVIDERS.openai, judgeCfg, diff);
@@ -371,20 +385,6 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
                 console.warn(`  ${runId}  judge failed, sourceCheat left null: ${(e as Error).message}`);
               }
             }
-          }
-
-          // Only a run that actually completed says anything about caching: a
-          // first cell that died at turn 1 (a 429 on fan-out) or refused has
-          // cacheReadTokens 0 for reasons that have nothing to do with the cache.
-          // Once any cache read is seen the mechanism is proven for this variant,
-          // so stop accumulating; until then, abort as soon as the window's worth
-          // of zeroes makes the verdict conclusive.
-          if (!cacheProven && scorable) {
-            cacheRuns++;
-            cacheReads += result.usage.cacheReadTokens;
-            cacheProven = cacheReads > 0;
-            const verdict = cacheVerdict(provider.cacheMode, cacheRuns, cacheReads, cacheWindow);
-            if (verdict) throw new Error(`[${name}] ${verdict}`);
           }
 
           const row: RunRow = {
@@ -406,6 +406,18 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             wallMs: Date.now() - t0, error: result.error ?? null,
           };
           store.upsertRun(row);
+
+          // Persist the paid trajectory before the integrity verdict: a conclusive
+          // cache failure should stop later work, not leave this completed run as
+          // orphaned events. Refusals and errors say nothing about cache health.
+          if (!cacheProven && scorable) {
+            cacheRuns++;
+            cacheReads += result.usage.cacheReadTokens;
+            cacheProven = cacheReads > 0;
+            const verdict = cacheVerdict(provider.cacheMode, cacheRuns, cacheReads, cacheWindow);
+            if (verdict) throw new Error(`[${name}] ${verdict}`);
+          }
+
           console.log(`  ${runId}  ${result.stop}  passed=${passed}  tampered=${row.tampered}  $${row.costUsd.toFixed(4)}`);
         } finally {
           if (!opts.keepTemp) fs.rmSync(root, { recursive: true, force: true });

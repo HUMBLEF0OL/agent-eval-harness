@@ -1,6 +1,81 @@
-import type { ProviderId, UsageTotals } from "./types.js";
+import type { LiveBudgetReservation, ProviderId, UsageTotals } from "./types.js";
 
 export interface Price { provider: ProviderId; in: number; cached: number; out: number }
+
+const NANODOLLARS_PER_USD = 1_000_000_000;
+
+export interface LiveBudgetSnapshot {
+  capUsd: number;
+  spentUsd: number;
+  reservedUsd: number;
+  quarantinedUsd: number;
+  remainingUsd: number;
+}
+
+function toNanodollars(usd: number, round: "up" | "down"): number {
+  if (!Number.isFinite(usd) || usd < 0) throw new Error(`USD amount must be finite and non-negative, got: ${usd}`);
+  const nanodollars = Math[round === "up" ? "ceil" : "floor"](usd * NANODOLLARS_PER_USD);
+  if (!Number.isSafeInteger(nanodollars)) {
+    throw new Error(`USD amount exceeds the safe nanodollar range, got: ${usd}`);
+  }
+  return nanodollars;
+}
+
+/** One invocation's shared live-call budget. Admissions are synchronous, so concurrent
+ *  request paths cannot interleave the capacity check and reservation mutation. */
+export class LiveBudgetLedger {
+  private readonly cap: number;
+  private spent = 0;
+  private reserved = 0;
+  private quarantined = 0;
+
+  constructor(capUsd: number) {
+    if (!Number.isFinite(capUsd) || capUsd <= 0) {
+      throw new Error(`live budget must be a positive finite number, got: ${capUsd}`);
+    }
+    this.cap = toNanodollars(capUsd, "down");
+  }
+
+  tryReserve(estimatedUsd: number): LiveBudgetReservation | null {
+    const amount = toNanodollars(estimatedUsd, "up");
+    if (amount <= 0) throw new Error(`reservation must be positive, got: ${estimatedUsd}`);
+    if (this.spent + this.reserved + this.quarantined + amount > this.cap) return null;
+    this.reserved += amount;
+
+    let open = true;
+    const finish = () => {
+      if (!open) throw new Error("budget reservation has already been settled");
+      open = false;
+      this.reserved -= amount;
+    };
+
+    return {
+      reservedUsd: amount / NANODOLLARS_PER_USD,
+      settle: actualUsd => {
+        const actual = toNanodollars(actualUsd, "up");
+        if (actual > amount) {
+          throw new Error(`actual cost $${actualUsd} exceeds reserved $${amount / NANODOLLARS_PER_USD}`);
+        }
+        finish();
+        this.spent += actual;
+      },
+      quarantine: () => {
+        finish();
+        this.quarantined += amount;
+      },
+    };
+  }
+
+  snapshot(): Readonly<LiveBudgetSnapshot> {
+    return {
+      capUsd: this.cap / NANODOLLARS_PER_USD,
+      spentUsd: this.spent / NANODOLLARS_PER_USD,
+      reservedUsd: this.reserved / NANODOLLARS_PER_USD,
+      quarantinedUsd: this.quarantined / NANODOLLARS_PER_USD,
+      remainingUsd: (this.cap - this.spent - this.reserved - this.quarantined) / NANODOLLARS_PER_USD,
+    };
+  }
+}
 
 /** USD per million tokens. Verified 2026-08-16.
  *  `gpt-5.6` (non-Terra) is deliberately absent — its pricing was not verified. */
@@ -28,6 +103,25 @@ export const PRICES: Record<string, Price> = {
   "gemini-3.5-flash-lite": { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
   "gemini-3.5-flash":      { provider: "google", in: 1.50, cached: 0.15, out: 9.00 },
 };
+
+/** Context ceilings used for conservative request admission. A price row alone is
+ *  insufficient: a model is hard-cap eligible only after its context limit is verified. */
+const OPENAI_MAX_INPUT_TOKENS: Record<string, number> = {
+  "gpt-5-nano": 400_000,
+  "gpt-5-mini": 400_000,
+};
+
+export function maxOpenAIRequestCostUsd(model: string, maxOutputTokens: number): number {
+  const price = PRICES[model];
+  const maxInputTokens = OPENAI_MAX_INPUT_TOKENS[model];
+  if (!price || price.provider !== "openai" || maxInputTokens === undefined) {
+    throw new Error(`model ${model} has no verified OpenAI hard-budget profile`);
+  }
+  if (!Number.isInteger(maxOutputTokens) || maxOutputTokens < 1) {
+    throw new Error(`max output tokens must be a positive integer, got: ${maxOutputTokens}`);
+  }
+  return (maxInputTokens * price.in + maxOutputTokens * price.out) / 1_000_000;
+}
 
 export function zeroUsage(): UsageTotals {
   return { inputTokens: 0, cacheWriteTokens: 0, cacheReadTokens: 0, outputTokens: 0, reasoningTokens: 0 };

@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
+import { LiveBudgetLedger } from "../cost.js";
 import { ALL_TOOLS } from "../tools.js";
 import type { SessionConfig } from "../types.js";
 
 // TSD §11.2. Mocking the vendor SDK is legal HERE and only here: this file lives
 // under src/provider/, the one directory check-leaks.mjs exempts.
-const { create } = vi.hoisted(() => ({ create: vi.fn() }));
+const { constructorOptions, create } = vi.hoisted(() => ({
+  constructorOptions: [] as unknown[],
+  create: vi.fn(),
+}));
 vi.mock("openai", () => ({
   default: class {
+    constructor(options: unknown) { constructorOptions.push(options); }
     responses = { create };
   },
 }));
@@ -16,6 +21,7 @@ const { openaiProvider } = await import("./openai.js");
 const cfg: SessionConfig = {
   model: "gpt-5-nano", effort: "low", systemPrompt: "sys",
   tools: ALL_TOOLS, maxTokensPerTurn: 4096, cacheKey: "history-test",
+  liveBudget: new LiveBudgetLedger(1),
 };
 
 const usage = {
@@ -99,5 +105,64 @@ describe("OpenAI session history across turns", () => {
       "reasoning", "function_call", "function_call",
       "function_call_output", "function_call_output",
     ]);
+  });
+});
+
+describe("OpenAI live-budget enforcement", () => {
+  it("disables SDK retries so every network attempt is explicitly budgeted", () => {
+    expect(constructorOptions).toContainEqual(expect.objectContaining({ maxRetries: 0 }));
+  });
+
+  it("does not dispatch when the worst-case request reservation cannot fit", async () => {
+    create.mockReset();
+    const limited = { ...cfg, liveBudget: new LiveBudgetLedger(0.001) };
+
+    await expect(openaiProvider.prewarm(limited)).rejects.toThrow(/live budget/i);
+    expect(create).not.toHaveBeenCalled();
+  });
+
+  it("settles a successful request at its actual usage cost", async () => {
+    create.mockReset();
+    create.mockResolvedValueOnce(turn2);
+    const liveBudget = new LiveBudgetLedger(0.25);
+
+    await openaiProvider.prewarm({ ...cfg, liveBudget });
+
+    expect(liveBudget.snapshot().reservedUsd).toBe(0);
+    expect(liveBudget.snapshot().spentUsd).toBeGreaterThan(0);
+    expect(liveBudget.snapshot().quarantinedUsd).toBe(0);
+  });
+
+  it("quarantines a reservation when dispatch fails after admission", async () => {
+    create.mockReset();
+    create.mockRejectedValueOnce(new Error("transport failed"));
+    const liveBudget = new LiveBudgetLedger(0.25);
+
+    await expect(openaiProvider.prewarm({ ...cfg, liveBudget })).rejects.toThrow(/transport failed/);
+
+    expect(liveBudget.snapshot().reservedUsd).toBe(0);
+    expect(liveBudget.snapshot().spentUsd).toBe(0);
+    expect(liveBudget.snapshot().quarantinedUsd).toBeGreaterThan(0);
+  });
+
+  it("quarantines a reservation when the response reports all-zero usage", async () => {
+    create.mockReset();
+    create.mockResolvedValueOnce({
+      ...turn2,
+      usage: {
+        input_tokens: 0,
+        input_tokens_details: { cached_tokens: 0 },
+        output_tokens: 0,
+        output_tokens_details: { reasoning_tokens: 0 },
+        total_tokens: 0,
+      },
+    });
+    const liveBudget = new LiveBudgetLedger(0.25);
+
+    await openaiProvider.prewarm({ ...cfg, liveBudget });
+
+    expect(liveBudget.snapshot().reservedUsd).toBe(0);
+    expect(liveBudget.snapshot().spentUsd).toBe(0);
+    expect(liveBudget.snapshot().quarantinedUsd).toBeGreaterThan(0);
   });
 });

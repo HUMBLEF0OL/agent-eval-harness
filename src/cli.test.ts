@@ -3,7 +3,10 @@ import * as path from "node:path";
 import { describe, expect, it } from "vitest";
 import { HARNESS_ROOT } from "./sandbox.js";
 
-const OPTION_NAMES = ["variant", "reps", "tasks", "concurrency", "keep_temp", "db", "max_steps", "judge"];
+const OPTION_NAMES = [
+  "variant", "reps", "tasks", "concurrency", "keep_temp", "db", "max_steps", "judge",
+  "max_live_usd",
+];
 
 /** Runs the CLI the way a shell would. No key is needed: every case here is settled
  *  during argument handling, before requireKey or any network call.
@@ -28,7 +31,7 @@ function cli(args: string[], env: Record<string, string> = {}) {
   return { status: r.status, err: `${r.stdout ?? ""}${r.stderr ?? ""}` };
 }
 
-describe("cli argument handling", () => {
+describe("cli argument handling", { timeout: 15_000 }, () => {
   // The argv Windows PowerShell actually produces: it strips the bare `--`, npm
   // absorbs the flag NAMES as its own config, and only the values are forwarded.
   it("refuses a flag-stripped invocation instead of sweeping the default variant", () => {
@@ -70,6 +73,24 @@ describe("cli argument handling", () => {
     expect(status).toBe(2);
     expect(err).toMatch(/--reps must be a positive integer, got: abc/);
   });
+
+  it("accepts --max-live-usd without reaching a live call", () => {
+    const { status, err } = cli([
+      "--variant", "nano", "--reps", "1", "--max-live-usd", "0.25",
+    ]);
+    expect(status).not.toBe(2);
+    expect(err).toMatch(/OPENAI_API_KEY is not set/);
+  });
+
+  it.each(["0", "-0.01", "NaN", "Infinity", "abc"])(
+    "rejects invalid --max-live-usd value %s",
+    raw => {
+      const args = raw.startsWith("-") ? [`--max-live-usd=${raw}`] : ["--max-live-usd", raw];
+      const { status, err } = cli(args);
+      expect(status).toBe(2);
+      expect(err).toContain(`--max-live-usd must be a positive finite number, got: ${raw}`);
+    },
+  );
 
   it("accepts a well-formed invocation, failing later at the key check", () => {
     const { status, err } = cli(["--variant", "nano", "--reps", "1"]);

@@ -377,6 +377,14 @@ Every code path that would spend money throws rather than silently defaulting: `
 throws on an unpriced model, `requireKey` throws before the first API call, and the cache
 assertion aborts a sweep rather than reporting cost numbers it cannot trust.
 
+For a hard per-invocation cap, pass `--max-live-usd`. OpenAI requests reserve their full
+verified context-window cost before dispatch; successful calls settle to measured usage,
+while uncertain failures and all-zero usage keep the reservation quarantined. SDK retries
+are disabled, so no hidden request bypasses the ledger. Hard-cap mode currently supports `gpt-5-nano` and the
+`gpt-5-mini` judge; other models and providers refuse before the first request.
+
+  npm run sweep "--" --variant nano --reps 1 --max-live-usd 0.25
+
 Keys live in a gitignored `.env.local`, which `npm run sweep` and `npm run record` load via
 Node's own `--env-file-if-exists` — no dotenv dependency, and no key ever typed at a prompt
 where a shell will remember it:
@@ -512,7 +520,7 @@ adapter, not in the runner.
 
     # then, with a key. Put OPENAI_API_KEY in .env.local once; sweep loads it itself.
     # Identical in PowerShell, bash and zsh — quote the separator, see above.
-    npm run sweep "--" --variant baseline --reps 3
+    npm run sweep "--" --variant nano --reps 1 --max-live-usd 0.25
 
     npm run report
 
