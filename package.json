@@ -11,6 +11,7 @@
     "demo": "tsx src/demo.ts",
     "check-leaks": "node scripts/check-leaks.mjs",
     "verify-fixtures": "node scripts/verify-fixtures.mjs",
+    "judge-check": "tsx --env-file-if-exists=.env.local scripts/judge-check.ts",
     "record": "tsx --env-file-if-exists=.env.local scripts/record-openai.ts",
     "sweep": "tsx --env-file-if-exists=.env.local src/cli.ts",
     "report": "tsx src/report.ts"
