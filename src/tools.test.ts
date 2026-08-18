@@ -18,13 +18,57 @@ describe("resolveInRoot", () => {
     expect(resolveInRoot(root, "src/sum.ts")).toBe(path.join(root, "src", "sum.ts"));
   });
 
+  // Escapes on every platform. A POSIX-absolute path is absolute on Windows too --
+  // path.resolve maps "/etc/passwd" onto the current drive -- so it belongs here.
   it.each([
     "../../etc/passwd",
     "src/../../escape.txt",
-    "C:\\Windows\\System32\\config",
     "/etc/passwd",
   ])("rejects %s", (p) => {
     expect(() => resolveInRoot(root, p)).toThrow(/escapes project root/);
+  });
+
+  it("rejects an absolute path outside root, whatever absolute means here", () => {
+    // Derived from os.tmpdir() so it is genuinely absolute on all three platforms,
+    // and a SIBLING of root rather than a child (root is itself a mkdtemp under
+    // tmpdir, so a naive tmpdir-relative path would land inside it and pass).
+    const outside = path.join(os.tmpdir(), "aeh-outside-probe.txt");
+    expect(() => resolveInRoot(root, outside)).toThrow(/escapes project root/);
+  });
+
+  // A drive-absolute path is an escape ONLY on Windows. On Linux and macOS a drive
+  // letter means nothing and a backslash is a legal filename character, so the same
+  // string is a RELATIVE name that resolves inside root -- and accepting it is the
+  // correct answer, not a hole in the guard. Asserting one behaviour for two path
+  // grammars is what made this the only test to fail when CI first ran off Windows:
+  // it encoded the platform instead of the security property.
+  const WINDOWS_DRIVE_ABSOLUTE = "C:\\Windows\\System32\\config";
+  if (process.platform === "win32") {
+    it("rejects a drive-absolute path (Windows only)", () => {
+      expect(() => resolveInRoot(root, WINDOWS_DRIVE_ABSOLUTE)).toThrow(/escapes project root/);
+    });
+  } else {
+    it("treats a Windows drive path as an ordinary filename (POSIX only)", () => {
+      const rel = path.relative(root, resolveInRoot(root, WINDOWS_DRIVE_ABSOLUTE));
+      expect(rel.startsWith("..")).toBe(false);
+      expect(path.isAbsolute(rel)).toBe(false);
+    });
+  }
+
+  // The lexical check alone passes this: <root>/linked/pwned.txt is lexically
+  // inside root. Only a realpath comparison catches it — and it has to, because
+  // sharing a node_modules into the sandbox by symlink is the obvious next step.
+  it("rejects a path that escapes through a symlinked directory", () => {
+    const outside = fs.mkdtempSync(path.join(os.tmpdir(), "aeh-outside-"));
+    const link = path.join(root, "linked");
+    // "junction" so Windows needs no elevation; the type arg is ignored on POSIX.
+    fs.symlinkSync(outside, link, "junction");
+    try {
+      expect(() => resolveInRoot(root, "linked/pwned.txt")).toThrow(/escapes project root/);
+    } finally {
+      fs.rmSync(link, { recursive: true, force: true });
+      fs.rmSync(outside, { recursive: true, force: true });
+    }
   });
 });
 
