@@ -1,5 +1,5 @@
 export type Effort = "low" | "medium" | "high" | "xhigh";
-export type ProviderId = "openai" | "anthropic" | "google";
+export type ProviderId = "openai" | "google";
 export type CacheMode = "explicit" | "implicit";
 
 /** The cheat judge always runs on this model, never on the model under test

@@ -361,14 +361,14 @@ Two things in the plan remain **unrun**, and the README does not pretend otherwi
   180 runs, ~$27). Deferred deliberately: the `nano` result shows the fixtures saturate, so
   the same sweep on a stronger model would return the same 100% ceiling at 800x the cost.
   Harder fixtures come first.
-- **The Anthropic arm.** No `ANTHROPIC_API_KEY` was ever available, so the adapter has never
-  made a live call; it is unit-tested offline against a hand-written response fixture. Review
-  found and fixed three things without a key: `prewarm` sent `max_tokens: 0` (the API requires
-  >= 1, so the first call of any sweep would have 400'd), and TWO invented request fields were
-  hiding behind an `as any` — `output_config.effort` and `output_config.format`, neither of
-  which exists anywhere in @anthropic-ai/sdk@0.70.1. Effort now maps onto the `thinking`
-  budget the installed SDK actually declares, structured output onto a forced tool call, and
-  both casts are gone so an invented field is a compile error.
+- **The Anthropic arm — removed, not deferred.** No `ANTHROPIC_API_KEY` was ever going to be
+  available, so on 2026-08-18 the adapter, its two test files, its recorded fixture, its price
+  rows and the `@anthropic-ai/sdk` dependency were all deleted. An adapter nobody can run is
+  not vendor neutrality, it is a second unverified thing to maintain. What the vendor taught
+  this design is kept where it is load-bearing: the token-accounting comments in the surviving
+  adapters still name which vendor excludes cached input and which includes it, because that
+  is why `normaliseUsage` is per-adapter at all. `docs/PRD.md` and `.superpowers/` are left
+  untouched — they record what was planned and done, and editing them would falsify a log.
 - **The Gemini arm.** Its adapter *is* live-proven (one full run: 6 steps, `passed=1`,
   `$0.0057`), but the AI Studio free tier is **20 requests/day/model** — about three runs —
   so no sweep is possible on it without billing enabled.
@@ -391,7 +391,6 @@ where a shell will remember it:
 
     OPENAI_API_KEY=sk-...
     GEMINI_API_KEY=...
-    ANTHROPIC_API_KEY=sk-ant-...
 
 Absent file, absent key, or a key for a provider you did not select are all fine: Node warns
 and continues, and `requireKey` then throws only for a provider a selected variant actually
@@ -453,49 +452,45 @@ branch, or a mock of the unit the test exercises, versus a genuine fix. See
 
 One line in `src/variants.ts`. Swapping the entire vendor is still one:
 
-    anthropic:      { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
-    "gemini-flash": { ...baseline, provider: "google",    model: "gemini-2.5-flash" },
+    "nano-effort-low": { ...baseline, model: "gpt-5-nano", effort: "low" },
+    "gemini-flash":     { ...baseline, provider: "google", model: "gemini-2.5-flash" },
 
 That is the argument for building a harness instead of a script.
 
 ## Provider support
 
-Three adapters ship behind the same two-method interface (`start` → `step`, plus
-`prewarm`), all unit-tested:
+Two adapters ship behind the same two-method interface (`start` → `step`, plus `prewarm`),
+both unit-tested:
 
 | Adapter | API | Live traffic behind anything checked in? |
 |---|---|---|
-| `src/provider/openai.ts` | Responses | **No** — the unit tests mock the SDK; `recorded/openai-turn2.json` is hand-written. |
-| `src/provider/anthropic.ts` | Messages | **No** — same, for `recorded/anthropic-turn2.json`. |
-| `src/provider/google.ts` | `generateContent` | **No** — its responses are inline in the tests. |
+| `src/provider/openai.ts` | Responses | **Yes** — `recorded/openai-turn2.json` is a real captured response (`resp_0f15a8…`, `gpt-5-nano-2025-08-07`). The tests mock the SDK and replay it. |
+| `src/provider/google.ts` | `generateContent` | **Yes** — `recorded/google-turn1.json` is a real capture (`gemini-2.5-flash`, `responseId IIGCav…`); the shape-by-shape cases stay inline. |
 
-**No artifact in this repo — test, fixture, number or sentence — is derived from a live API
-call.** That is a claim about what is checked in, and it is checkable: every response the
-tests see comes from a mocked SDK, and the five gate commands make no network call. It is
-deliberately *not* a claim about what anyone has ever run at a shell with a key of their own,
-which this file has no way to attest to. Everything below is what the offline tests establish,
-and nothing more.
+**An earlier version of this section claimed that no artifact here was derived from a live API
+call. That was false when written, and is corrected rather than quietly dropped:** two of the
+recorded fixtures are real captures, and every number in [The finding](#the-finding) comes from
+live sweeps. The narrower claim is the true one, and it is the one that matters for anyone
+reproducing this — **no gate command reads a key or makes a network call**, so all five verify
+this tree offline, and the adapters are unit-tested against replayed responses rather than
+against the vendor.
 
 One live call is still *owed*, and `src/provider/google.ts` says so in its header: the disputed
 `candidatesTokenCount` question (TSD §5.3) is settled outright by a single `generateContent`
 with thinking on. Its answer is recorded nowhere in this repo, which means it is unanswered
 here — a hand-run observation someone cannot reproduce from this tree does not change that.
 
-The recorded response fixtures — `recorded/openai-turn2.json` and
-`recorded/anthropic-turn2.json` — are hand-written, not live captures, because no API key
-was available; each says so in its own `_comment`. The Google tests keep their responses
-inline in the test files for the same reason, rather than putting hand-written JSON in a
-directory called `recorded/`. All of them are faithful to the documented payload shapes,
-and replacing them with real captures (`npm run record` for OpenAI) is the first thing to
-do once a key exists.
+The recorded response fixtures are live captures, written by `npm run record` (OpenAI) and
+`scripts/record-google.ts` (Gemini), which is why each carries a real response id and a real
+`usageMetadata`/`billing` block. Regenerating them needs a key; replaying them does not. The
+Google tests additionally keep small responses inline for the shape-by-shape cases that one
+capture cannot cover.
 
-The reason three adapters exist rather than one is the usage accounting, which is
-different in every vendor and silently wrong if you assume otherwise:
+The reason the adapters are separate rather than one is the usage accounting, which differs
+per vendor and is silently wrong if you assume otherwise:
 
 - **OpenAI** — `input_tokens` *includes* cached, so cached is subtracted; `output_tokens`
   already includes reasoning.
-- **Anthropic** — `input_tokens` *excludes* cached, so subtracting would double-discount;
-  reasoning tokens are not reported at all.
 - **Google** — `promptTokenCount` includes cached (subtract), and `candidatesTokenCount`
   *excludes* thoughts (add).
 

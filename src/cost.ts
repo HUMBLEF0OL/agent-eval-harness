@@ -88,9 +88,6 @@ export const PRICES: Record<string, Price> = {
   // on 2026-08-17, which also confirmed the gpt-5-nano row above unchanged.
   "gpt-5-mini":       { provider: "openai",    in: 0.25, cached: 0.025, out:  2.00 },
   // Sonnet 5 rate is introductory, expires 2026-08-31; then 3.00 / 0.30 / 15.00.
-  "claude-sonnet-5":  { provider: "anthropic", in: 2.00, cached: 0.20,  out: 10.00 },
-  "claude-opus-5":    { provider: "anthropic", in: 5.00, cached: 0.50,  out: 25.00 },
-  "claude-haiku-4-5": { provider: "anthropic", in: 1.00, cached: 0.10,  out:  5.00 },
   // Read off Google's own pricing page (ai.google.dev/gemini-api/docs/pricing),
   // paid text tier, on 2026-08-16. Third-party aggregators listed DIFFERENT
   // numbers for both models; the vendor page wins. `gemini-2.5-pro` is absent

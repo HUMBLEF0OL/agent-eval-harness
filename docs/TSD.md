@@ -3,12 +3,36 @@
 **Status:** Approved for build
 **Date:** 2026-08-16 (rev 2 — dual-provider)
 **Companion doc:** [PRD.md](PRD.md)
-**Stack:** TypeScript (ESM), `openai` + `@anthropic-ai/sdk`, `better-sqlite3`, vitest (fixtures only), static HTML report
-**Credentials:** `OPENAI_API_KEY` only. Nothing in the build, test, or demo path may require `ANTHROPIC_API_KEY`.
+**Stack:** TypeScript (ESM), `openai` + `@google/genai`, `better-sqlite3`, vitest (fixtures only), static HTML report
+**Credentials:** `OPENAI_API_KEY` for OpenAI arms, `GEMINI_API_KEY` for Google arms. Nothing in the build, test, or demo path may require **any** key — the five gate commands are keyless by construction (§11).
 
 ---
 
-## 0. What changed in rev 2
+## 0. What changed in rev 3
+
+The **Anthropic adapter was removed on 2026-08-18**: `src/provider/anthropic.ts`, its two test
+files, `recorded/anthropic-turn2.json`, its three price rows, the `anthropic` variant, its
+`KEY_ENV` and cache-floor entries, and the `@anthropic-ai/sdk` dependency. No key was ever
+going to be available, and an adapter nobody can run is not vendor neutrality — it is a second
+unverified thing to keep in sync. `ProviderId` is now `"openai" | "google"`.
+
+Two consequences worth stating rather than discovering:
+
+- **No shipped provider declares `cacheMode: "explicit"` any more.** OpenAI moved to
+  `"implicit"` when a live keyed request missed after a successful pre-warm, and Google was
+  always implicit. The mode stays in the contract and `cacheVerdict` still implements it,
+  covered by its own unit test — but §6.5's `explicit` bullet now describes a branch no
+  adapter reaches. A future adapter claiming it must mean it.
+- **§5.2 and §6.1 are retained as design history, not as shipping fact.** They are why the
+  provider contract, the normalisation table (§5.3) and the per-model cache floor exist at all:
+  the vendor disagreement about what `input_tokens` means is the whole reason `normaliseUsage`
+  lives in each adapter. Deleting them would leave the design looking arbitrary.
+
+Rev 2's account below is left exactly as written; it records what was true then.
+
+---
+
+## 0.1 What changed in rev 2
 
 Rev 1 wrote the agent loop directly against the Anthropic Messages API. We have an OpenAI key and no Anthropic key, so the loop moves behind a two-method provider interface and both vendors get an adapter.
 
@@ -38,8 +62,8 @@ The one place complexity genuinely increases is token accounting (§5), because 
    │  provider.Session      tools.ts           │
    │   ┌────────┴────────┐                     │
    │   ▼                 ▼                     │
-   │ openai.ts      anthropic.ts               │
-   │ (Responses)    (Messages)                 │
+   │ openai.ts      google.ts                  │
+   │ (Responses)    (generateContent)          │
    └───────────────────┬───────────────────────┘
                        ▼
            ┌────────────────────────┐
@@ -56,7 +80,6 @@ The one place complexity genuinely increases is token accounting (§5), because 
 |---|---|
 | `src/types.ts` | The provider contract and the normalised records everything else speaks. No imports from either vendor SDK. |
 | `src/provider/openai.ts` | OpenAI Responses API adapter. The only file that imports `openai`. |
-| `src/provider/anthropic.ts` | Anthropic Messages API adapter. The only file that imports `@anthropic-ai/sdk`. |
 | `src/provider/google.ts` | Google Gemini `generateContent` adapter. The only file that imports `@google/genai`. Also owns its own rate-limit throttle and 429 retry (§5.5). |
 | `src/provider/index.ts` | `PROVIDERS: Record<ProviderId, Provider>`. Ten lines. |
 | `src/loop.ts` | Hand-rolled agent loop. Emits events. Knows nothing about vendors, fixtures, or scoring. |
@@ -85,7 +108,7 @@ Deliberately flat. No `core/`, no `lib/`, no dependency-injection container, no 
 
 ```ts
 export type Effort = "low" | "medium" | "high" | "xhigh";
-export type ProviderId = "openai" | "anthropic";
+export type ProviderId = "openai" | "google";
 
 /** Vendor-neutral tool definition. `parameters` is plain JSON Schema. */
 export interface ToolSpec {
@@ -459,7 +482,11 @@ return {
 };
 ```
 
-### 5.2 Anthropic (`provider/anthropic.ts`) — Messages API
+### 5.2 Anthropic (`provider/anthropic.ts`) — Messages API *(REMOVED — design history)*
+
+> This adapter no longer exists (§0). The section is kept because §5.3's normalisation table
+> and §6.1's breakpoint plan are derived from it, and because the vendor contrast is the
+> justification for the provider interface. Nothing here describes shipping code.
 
 **Request:**
 
@@ -554,9 +581,8 @@ One caveat is **encoded rather than resolved**: a third-party source claims that
 
 ```ts
 export const PROVIDERS: Record<ProviderId, Provider> = {
-  openai:    openaiProvider,
-  anthropic: anthropicProvider,
-  google:    googleProvider,
+  openai: openaiProvider,
+  google: googleProvider,
 };
 ```
 
@@ -612,7 +638,10 @@ All three vendors cache on a **prefix match** — any byte change invalidates ev
 
 The minimum-prefix row is per **model**, not per vendor, which is why §6.4's floor is derived from the variant rather than hardcoded.
 
-### 6.1 Anthropic breakpoint plan
+### 6.1 Anthropic breakpoint plan *(REMOVED — design history)*
+
+> Kept for the same reason as §5.2: the two-breakpoint plan is why `cacheMode` is part of the
+> provider contract rather than a runner `if`. No shipped adapter sets a breakpoint.
 
 | # | Location | Caches | Lifetime |
 |---|---|---|---|
@@ -721,7 +750,7 @@ Cache TTL is 5 minutes on Anthropic and 30 on OpenAI. A variant's 45 runs execut
 
 `Provider.cacheMode` carries the difference, so the runner never special-cases a provider id:
 
-- **`"explicit"`** (Anthropic) — the adapter sets a `cache_control` breakpoint and a warm prefix reliably reports a read. One completed run with `cacheReadTokens: 0` is already conclusive, so the gate keeps its original fail-fast behaviour: `CACHE_WINDOW.explicit = 1`.
+- **`"explicit"`** (**no shipped provider** since the Anthropic adapter was removed, §0) — an adapter that sets a real cache breakpoint, where a warm prefix reliably reports a read. One completed run with `cacheReadTokens: 0` would already be conclusive, so the gate keeps fail-fast behaviour for it: `CACHE_WINDOW.explicit = 1`. The branch is live code with a unit test; it simply has no caller.
 - **`"implicit"`** (OpenAI, Google) — caching is automatic and has no guarantee of a hit. OpenAI's `prompt_cache_key` improves routing affinity but is not an explicit cache breakpoint; a live keyed request missed immediately after a successful pre-warm. A single zero is normal.
 
 Measured, three recorded sessions against `gemini-2.5-flash` with an identical ~1380-token prefix, each preceded by a pre-warm:
@@ -775,12 +804,6 @@ export const PRICES: Record<string, { provider: ProviderId; in: number; cached: 
   "gpt-5.6-terra":    { provider: "openai",    in: 2.00, cached: 0.20,  out: 12.00 },
   "gpt-5-nano":       { provider: "openai",    in: 0.05, cached: 0.005, out:  0.40 },
 
-  // Sonnet 5 rate is introductory and expires 2026-08-31; then 3.00 / 0.30 / 15.00.
-  // A comment, not logic — absolute token counts are stored, so cost is recomputable.
-  "claude-sonnet-5":  { provider: "anthropic", in: 2.00, cached: 0.20,  out: 10.00 },
-  "claude-opus-5":    { provider: "anthropic", in: 5.00, cached: 0.50,  out: 25.00 },
-  "claude-haiku-4-5": { provider: "anthropic", in: 1.00, cached: 0.10,  out:  5.00 },
-
   // Google's own pricing page (ai.google.dev/gemini-api/docs/pricing), paid text
   // tier. Third-party aggregators listed different numbers for both; vendor wins.
   "gemini-2.5-flash":      { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
@@ -819,7 +842,7 @@ CREATE TABLE runs (
   id                    TEXT PRIMARY KEY,       -- `${task}:${variant}:${rep}`
   task_id               TEXT NOT NULL,
   variant               TEXT NOT NULL,
-  provider              TEXT NOT NULL,          -- openai|anthropic
+  provider              TEXT NOT NULL,          -- openai|google
   model                 TEXT NOT NULL,
   effort                TEXT NOT NULL,
   rep                   INTEGER NOT NULL,
@@ -837,7 +860,7 @@ CREATE TABLE runs (
   cache_write_tokens    INTEGER,
   cache_read_tokens     INTEGER,
   output_tokens         INTEGER,
-  reasoning_tokens      INTEGER,                -- subset of output_tokens; 0 on anthropic
+  reasoning_tokens      INTEGER,                -- subset of output_tokens
   cost_usd              REAL,
   wall_ms               INTEGER,
   error                 TEXT
@@ -978,9 +1001,6 @@ export const VARIANTS: Record<string, Variant> = {
   // unrun: cheap enough to add if budget allows
   nano:            { ...baseline, model: "gpt-5-nano" },
 
-  // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
-  anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
-
   // unrun: needs GEMINI_API_KEY. The OpenAI effort ladder, mirrored, so the
   // cross-vendor comparison differs in the vendor and nothing else.
   "gemini-flash":        { ...baseline, provider: "google", model: "gemini-2.5-flash" },
@@ -1023,16 +1043,14 @@ The end-to-end fake proves the loop. It proves nothing about the adapters, which
 | Test | Asserts |
 |---|---|
 | `openai.usage.test.ts` | Normalised totals from `recorded/openai-turn2.json`. Specifically that `inputTokens` is `input_tokens − cached_tokens` and **not** `input_tokens`. |
-| `anthropic.usage.test.ts` | Normalised totals from `recorded/anthropic-turn2.json`. Specifically that `inputTokens` is used as-is and **not** reduced by `cache_read_input_tokens`. |
 | `openai.history.test.ts` | After a tool turn, the session's `input` array contains the turn-1 `reasoning` item, and one `function_call_output` per call as **separate** items. |
-| `anthropic.history.test.ts` | After a tool turn, `messages` ends with **one** user message containing **all** `tool_result` blocks, and the assistant message retains its `thinking` block. |
 | `google.test.ts` | Normalised totals from an inline response: `inputTokens` is `promptTokenCount − cachedContentTokenCount` **and** `outputTokens` is `candidatesTokenCount + thoughtsTokenCount`. Plus `usageArithmeticHolds` on both the documented shape and the disputed one, and `thinkingBudgetFor` never exceeding half the turn's output cap at either cap the adapter uses. |
 | `google.history.test.ts` | After a tool turn, `contents` ends with **one** user `Content` carrying **all** `functionResponse` parts, and the turn-1 model `Content` is replayed with its `thoughtSignature` verbatim. Drives the real adapter with `@google/genai` mocked — legal only under `src/provider/`. |
 | `google.throttle.test.ts` | The adapter's two pieces of real control flow, which no other test covers (`google.history.test.ts` sets `GEMINI_MIN_INTERVAL_MS=0` to switch the gate off): three concurrent requests start one interval **apart**, not together after one shared sleep; a 400 re-throws after one call; a 429 retries to the attempt cap and then re-throws with its status; a `retryDelay` body hint and a `Retry-After` header both beat the exponential default; a 503 retries and returns. |
 | `stop.test.ts` | Every row of the §5.3 stop-mapping table, both directions. |
 | `cost.test.ts` | `costUsd` throws on an unknown model; a known model of each vendor matches a hand-computed figure; `gpt-5.6` and `gemini-2.5-pro` are absent. |
 
-These are table-driven and fast, and they are the reason all three adapters can be trusted without a key. The Google tests carry their responses inline rather than in `recorded/` — a hand-written file in a directory named `recorded/` is the more misleading of the two options. Neither `recorded/openai-turn2.json` nor `recorded/anthropic-turn2.json` is a live capture: both are hand-written fixtures standing in until someone records real ones. Replacing them with real captures (`npm run record` for OpenAI) is the first task once a key is available. Each file's own `_comment` says so; the README says so too.
+These are table-driven and fast, and they are the reason both adapters can be trusted without a key. `recorded/openai-turn2.json` and `recorded/google-turn1.json` **are** live captures, written by `npm run record` and `scripts/record-google.ts` — an earlier revision of this paragraph claimed both were hand-written stand-ins, which stopped being true once the recordings were made. Regenerating them needs a key; replaying them in the tests does not. The Google tests additionally carry small responses inline for the shape-by-shape cases one capture cannot cover.
 
 ### 11.3 The leak check
 
@@ -1072,7 +1090,6 @@ Vendor-condition mapping is in §5.3 and happens entirely in the adapters. A ven
 | Setting | Default | Source |
 |---|---|---|
 | `OPENAI_API_KEY` | — | env. Required whenever a selected variant names `provider: "openai"`. |
-| `ANTHROPIC_API_KEY` | — | env. Required **only** if a selected variant names `provider: "anthropic"`. |
 | `GEMINI_API_KEY` | — | env. Required **only** if a selected variant names `provider: "google"`. |
 | `GEMINI_MIN_INTERVAL_MS` | 6500 | env, Google adapter only. Minimum spacing between request *starts* (~9 RPM), because free-tier Flash is ~10 RPM — below what one worker generates (§5.5). Raise it if AI Studio shows a tighter limit for the account; lower it on a paid tier. |
 | `--variant` | `baseline` | CLI, repeatable |
@@ -1089,9 +1106,8 @@ Key checks happen at variant-selection time, before the first fixture is copied 
 
 ```ts
 const KEY_ENV: Record<ProviderId, string> = {
-  openai:    "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google:    "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GEMINI_API_KEY",
 };
 
 function requireKey(p: ProviderId) {
@@ -1100,7 +1116,7 @@ function requireKey(p: ProviderId) {
 }
 ```
 
-A table, not a ternary. The `p === "openai" ? … : ANTHROPIC_API_KEY` this replaced would have demanded `ANTHROPIC_API_KEY` for a Google variant — a startup failure naming a key you do not need, which reads as a harness bug rather than a missing credential. `Record<ProviderId, string>` makes the *next* provider a compile error instead.
+A table, not a ternary. The `p === "openai" ? … : <the other key>` this replaced would have demanded the wrong vendor's key for a Google variant — a startup failure naming a key you do not need, which reads as a harness bug rather than a missing credential. `Record<ProviderId, string>` makes the *next* provider a compile error instead.
 
 There is no `--provider` flag. Provider is a property of a variant, not of an invocation; a flag would let you run `baseline` against a vendor it was never defined for, and silently make two rows in the database incomparable.
 

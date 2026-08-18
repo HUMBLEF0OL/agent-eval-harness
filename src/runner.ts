@@ -35,14 +35,13 @@ export interface SweepOptions {
 // in runSweep below never actually fires; it exists to fail loudly if that ever
 // changes rather than silently judging a model against itself.
 
-/** A lookup, not a ternary. The old `p === "openai" ? OPENAI : ANTHROPIC` shape
+/** A lookup, not a ternary. The old `p === "openai" ? OPENAI : <other>` shape
  *  asked for the WRONG variable the moment a third provider existed, and it did
  *  so silently — the sweep would refuse to start naming a key you do not need.
  *  `Record<ProviderId, string>` makes a fourth provider a compile error instead. */
 const KEY_ENV: Record<ProviderId, string> = {
-  openai:    "OPENAI_API_KEY",
-  anthropic: "ANTHROPIC_API_KEY",
-  google:    "GEMINI_API_KEY",
+  openai: "OPENAI_API_KEY",
+  google: "GEMINI_API_KEY",
 };
 
 export function requireKey(p: ProviderId): void {
@@ -52,12 +51,10 @@ export function requireKey(p: ProviderId): void {
 
 /** Smallest prefix a vendor will cache at all. Per-MODEL, which is why the floor
  *  is no longer one hardcoded number: 1024 on OpenAI and Gemini 2.5 Flash, 2048
- *  on Gemini 2.5 Pro, and on Anthropic 512 (Opus 5) / 1024 (Sonnet 5) / 4096
- *  (Haiku 4.5). Keyed on the model prefix alone because model names are already
- *  vendor-unique; anything unlisted gets the 1024 default. */
+ *  on Gemini 2.5 Pro. Keyed on the model prefix alone because model names are
+ *  already vendor-unique; anything unlisted gets the 1024 default. */
 const CACHE_MINIMUM: Array<[string, number]> = [
-  ["gemini-2.5-pro",   2048],
-  ["claude-haiku-4-5", 4096],
+  ["gemini-2.5-pro", 2048],
 ];
 
 /** Both vendors document the threshold as the point caching *starts* working and

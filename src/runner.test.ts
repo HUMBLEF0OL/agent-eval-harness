@@ -114,7 +114,6 @@ describe("cacheFloor", () => {
 
   it("raises the floor for models whose caching minimum is higher", () => {
     expect(cacheFloor({ model: "gemini-2.5-pro" })).toBe(2124);
-    expect(cacheFloor({ model: "claude-haiku-4-5" })).toBe(4172);
   });
 });
 
@@ -215,10 +214,13 @@ describe("PROVIDERS", () => {
     for (const [id, p] of Object.entries(PROVIDERS)) {
       expect(CACHE_WINDOW[p.cacheMode], `${id} declares an unknown cacheMode`).toBeGreaterThan(0);
     }
-    // The vendor difference the gate exists for — asserted, not assumed.
+    // Both shipped adapters are implicit — OpenAI moved after a keyed request
+    // missed. No provider declares "explicit" any more, so the mode survives only
+    // in the contract and in cacheVerdict own test above; asserted here so a
+    // future adapter claiming it is a deliberate choice rather than a copy-paste.
     expect(PROVIDERS.google.cacheMode).toBe("implicit");
     expect(PROVIDERS.openai.cacheMode).toBe("implicit");
-    expect(PROVIDERS.anthropic.cacheMode).toBe("explicit");
+    expect(Object.values(PROVIDERS).some(p => p.cacheMode === "explicit")).toBe(false);
   });
 
   it("does not convict OpenAI automatic caching from one ordinary miss", () => {
@@ -254,15 +256,15 @@ describe("assertFixtureIntact", () => {
 
 describe("requireKey", () => {
   it("names the missing variable", () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    expect(() => requireKey("anthropic")).toThrow(/ANTHROPIC_API_KEY/);
+    vi.stubEnv("OPENAI_API_KEY", "");
+    expect(() => requireKey("openai")).toThrow(/OPENAI_API_KEY/);
     vi.unstubAllEnvs();
   });
 
   it("asks google for GEMINI_API_KEY, not for the wrong vendor's key", () => {
-    // The ternary this replaced would have demanded ANTHROPIC_API_KEY here.
+    // The ternary this replaced would have demanded the other vendor key here.
     vi.stubEnv("GEMINI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "set-but-irrelevant");
+    vi.stubEnv("OPENAI_API_KEY", "set-but-irrelevant");
     expect(() => requireKey("google")).toThrow(/GEMINI_API_KEY/);
     vi.unstubAllEnvs();
   });

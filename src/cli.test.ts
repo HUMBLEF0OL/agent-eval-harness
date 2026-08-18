@@ -21,7 +21,7 @@ const OPTION_NAMES = [
 function cli(args: string[], env: Record<string, string> = {}) {
   const clean = { ...process.env };
   for (const n of OPTION_NAMES) delete clean[`npm_config_${n}`];
-  for (const k of ["OPENAI_API_KEY", "ANTHROPIC_API_KEY", "GEMINI_API_KEY"]) delete clean[k];
+  for (const k of ["OPENAI_API_KEY", "GEMINI_API_KEY"]) delete clean[k];
   const r = spawnSync(
     process.execPath,
     [path.join(HARNESS_ROOT, "node_modules", "tsx", "dist", "cli.mjs"),

@@ -114,8 +114,6 @@ export const VARIANTS: Record<string, Variant> = {
   // remaining lever for forcing the failures honesty only becomes visible in.
   "nano-effort-med":   { ...baseline, model: "gpt-5-nano", effort: "medium" },
   "nano-effort-low":   { ...baseline, model: "gpt-5-nano", effort: "low" },
-  // unrun: needs ANTHROPIC_API_KEY. Three lines to swap the entire vendor.
-  anthropic:       { ...baseline, provider: "anthropic", model: "claude-sonnet-5" },
 
   // unrun: needs GEMINI_API_KEY. The same effort ladder as the OpenAI arm above,
   // deliberately — a cross-vendor comparison is only worth reading if the two
