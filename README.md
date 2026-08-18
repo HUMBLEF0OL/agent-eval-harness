@@ -413,6 +413,19 @@ they will very likely return the same 100%:
 That produces `report.html` — pass rate with a bootstrap 95% CI, tamper rate, cost, and
 failure-mode breakdown, per variant — viewable by opening the file, no server required.
 
+### Portability
+
+Built and measured on Windows 11, but not Windows-only. `.gitattributes` pins every checkout
+to LF so a fixture hashes identically on every platform, nothing anywhere spawns a shell, and
+every path handed to the model or written to the database is forward-slashed. The five
+zero-cost gates run in CI on `ubuntu-latest`, `windows-latest` and `macos-latest` — Node 22
+on all three plus Node 26 on Linux, because `engines` promises `>=22` and an untested promise
+is not one. All green: run 32122510801.
+
+What that does **not** cover — musl, arm64, and every live-provider path a keyless gate cannot
+reach — is written down in [docs/PORTABILITY.md](docs/PORTABILITY.md), together with the two
+defects the matrix caught that local testing could not.
+
 ## What it measures
 
 | Axis | How |

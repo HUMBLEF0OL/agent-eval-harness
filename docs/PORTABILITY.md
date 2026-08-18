@@ -52,15 +52,18 @@ Verified locally, on Windows:
 
 ## Verified on all three platforms
 
-`.github/workflows/gates.yml` run **32116604567** on `feat/agent-eval-harness`:
+`.github/workflows/gates.yml` run **32122510801** on `feat/agent-eval-harness`:
 
 | Job | npm ci | tsc | test | check-leaks | demo | verify-fixtures |
 |---|---|---|---|---|---|---|
-| ubuntu-latest | ok | ok | ok | ok | ok | ok |
-| macos-latest | ok | ok | ok | ok | ok | ok |
-| windows-latest | ok | ok | ok | ok | ok | ok |
+| ubuntu-latest, Node 22 | ok | ok | ok | ok | ok | ok |
+| ubuntu-latest, Node 26 | ok | ok | ok | ok | ok | ok |
+| macos-latest, Node 22 | ok | ok | ok | ok | ok | ok |
+| windows-latest, Node 22 | ok | ok | ok | ok | ok | ok |
 
-All six steps green on every OS, including `verify-fixtures`, which reported
+All six steps green on every job — and zero annotations, because `checkout` and
+`setup-node` are on v7 rather than a runtime the runners have deprecated. That
+includes `verify-fixtures`, which reported
 "all fixtures fail before and pass after, and all 7 control fixture(s) stay red" on
 each. That also settles the two things flagged as untestable locally:
 `better-sqlite3` builds and loads on all three runner images, and the tsconfig casing
