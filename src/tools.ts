@@ -57,6 +57,19 @@ export function resolveInRoot(root: string, p: string): string {
   if (rel.startsWith("..") || path.isAbsolute(rel)) {
     throw new ToolError(`path escapes project root: ${p}`);
   }
+  // Lexical is not enough. A symlink at <root>/node_modules is lexically inside
+  // root but resolves outside it, so write_file("node_modules/x") would pass the
+  // check above and land in the real project — and run_tests then executes
+  // model-authored code with harness privileges. So compare resolved paths too.
+  // The target itself need not exist yet (write_file creates files), so resolve
+  // the nearest existing ancestor and re-append the rest.
+  let probe = abs;
+  while (!fs.existsSync(probe) && path.dirname(probe) !== probe) probe = path.dirname(probe);
+  const real = path.join(fs.realpathSync(probe), path.relative(probe, abs));
+  const realRel = path.relative(fs.realpathSync(root), real);
+  if (realRel.startsWith("..") || path.isAbsolute(realRel)) {
+    throw new ToolError(`path escapes project root via symlink: ${p}`);
+  }
   return abs;
 }
 
