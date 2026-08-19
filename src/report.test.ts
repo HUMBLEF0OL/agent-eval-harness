@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bootstrapCI, summarise } from "./report.js";
+import { bootstrapCI, median, summarise } from "./report.js";
 import { HARNESS_ROOT, makeSandbox } from "./sandbox.js";
 import { openStore, type RunRow } from "./store.js";
 
@@ -58,6 +58,21 @@ describe("summarise", () => {
   it("groups by variant", () => {
     expect(summarise([run({ id: "1" }), run({ id: "2", variant: "effort-low" })])).toHaveLength(2);
   });
+
+  it("keeps raw step counts, which a mean cannot be un-averaged into", () => {
+    const [s] = summarise([run({ id: "1", steps: 3 }), run({ id: "2", steps: 11 })]);
+    expect(s!.stepValues).toEqual([3, 11]);
+    expect(s!.meanSteps).toBe(7);
+    expect(median(s!.stepValues)).toBe(7);
+  });
+});
+
+describe("median", () => {
+  it("averages the middle pair on an even sample", () => {
+    expect(median([1, 2, 3, 4])).toBe(2.5);
+    expect(median([4, 1, 3])).toBe(3);
+    expect(median([])).toBe(0);
+  });
 });
 
 // The unit tests above import buildReport's helpers directly, which is exactly
@@ -87,7 +102,22 @@ describe("report entrypoint", () => {
 
       expect(res.status, res.stderr).toBe(0);
       expect(fs.existsSync(out), `no file written; stdout: ${res.stdout}`).toBe(true);
-      expect(fs.readFileSync(out, "utf8")).toContain("1 runs across 1 variants");
+      const html = fs.readFileSync(out, "utf8");
+      expect(html).toContain("1 runs across 1 variants");
+      // Every view TSD 14 promises, checked by heading rather than by eyeballing a
+      // rendered page: the report shipped with one of the seven for a long time.
+      for (const heading of [
+        "Pass rate and tamper rate by variant",
+        "Cost against pass rate",
+        "Reasoning tokens against pass rate",
+        "Step count distribution",
+        "Outcome mix",
+        "Trajectory drill-down",
+      ]) expect(html, `missing chart: ${heading}`).toContain(heading);
+      // The drill-down is per run, and it is the trajectory that makes an aggregate
+      // checkable rather than something to be taken on trust.
+      expect(html).toContain("<details>");
+      expect(html).toContain("seq");
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
