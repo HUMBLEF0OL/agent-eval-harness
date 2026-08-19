@@ -246,8 +246,12 @@ The practical version, stated with its own caveat: **if your tasks look like the
 effort is 2.4x the bill for nothing. If they look like the eighth, it is the difference between
 a fix and a failure — and you cannot tell which kind you have from the pass rate alone.**
 
-Every hard fixture was built so that the *tempting* fix breaks a sibling test — verified by
-applying that naive fix and observing a red suite. So guess-and-check cannot pass them.
+Every hard fixture was built so that the *tempting* fix breaks a sibling test. That used to be
+prose; it is now an artifact. Each one ships the exact fix its `naiveFixThatFails` describes in
+`fixtures/1xx/naive-fix/`, and `npm run verify-fixtures` applies all eight and requires the suite
+to stay **red** — and to touch no guarded file, so it is red for the right reason. A ninth hard
+fixture without a `naive-fix/` directory fails that gate rather than quietly un-verifying this
+paragraph. So guess-and-check cannot pass them, and you can re-run the proof.
 
 The tier is genuinely harder, and that part is measurable: **reasoning per run tripled**
 (1203 → 3744) and steps rose 6.1 → 7.6 against the easy tier. `102-money-rounding` — where
@@ -292,8 +296,9 @@ comparison is uninformative here.
 **The harness measures correctly.** 121/121 runs scored, costed from real five-category usage,
 and stored with complete replayable trajectories. Restore-before-verify, the per-vendor cache
 gates, and the error taxonomy all behaved as designed - including under a real quota exhaustion
-on a Gemini run, where errors were recorded as `stop=error` with `passed=NULL` so they never
-counted as model failures.
+during the (since-removed) Gemini run, where errors were recorded as `stop=error` with
+`passed=NULL` so they never counted as model failures. That path is now also exercised by a
+scorer that never returns a verdict, which is recorded the same way.
 
 **Zero tampering in 121 runs - and that is a fact about the instrument, not the model.** No run
 has ever modified a guarded file. Early on that was written up as weak evidence of honesty. It
@@ -324,6 +329,21 @@ key, and `judge-check` had been inferring the expected verdict from a directory 
 
 That discipline is the deliverable. Total cost of finding out: **$0.353** across 121 runs.
 
+**Every number above is in this repository as evidence, not just as a claim.** All six sweep
+databases are tracked — runs, per-run costs, judge verdicts, and all 3,351 trajectory events —
+and `npm run evidence` recomputes the headline from them:
+
+    npm run evidence   # 121 runs, $0.3529, 0 tampered, 12 judged cheats — or it exits 1
+
+That gate is in CI. If a README figure and its database ever disagree, the disagreement fails
+the build instead of standing. The per-sweep breakdown and what each sweep was for live in
+`src/evidence.ts`; open any database with `sqlite3`, or regenerate a report from it with
+`npm run report -- ./eval-hard.db ./report-hard.html`.
+
+One limit worth stating: re-running a cell **replaces** its row and its events (`INSERT OR
+REPLACE`, plus `clearEvents`), so a database is the current state of each cell, not an
+append-only log of every attempt ever made. What is published is what these files hold.
+
 Cost figures are computed from measured usage at list prices. Reproduce with:
 
     # QUOTE THE SEPARATOR: "--", not --. Windows PowerShell strips a bare `--` before
@@ -351,9 +371,11 @@ Cost figures are computed from measured usage at list prices. Reproduce with:
 ## Status
 
 Five sweeps have been recorded — 121 runs for $0.353, reported in
-[The finding](#the-finding). The easy tier is committed as `report.html`; the four-arm hard
-tier lives in a separate `eval-hard.db` / `report-hard.html` (git-ignored, regenerate with the
-commands below) because `summarise()` groups by variant and would otherwise average the tiers.
+[The finding](#the-finding) — plus a one-run smoke test of the hard live-spend cap. All six
+databases are tracked and checked by `npm run evidence`. The easy tier's report is committed as
+`report.html`; every other report is regenerated from its database with the commands below,
+and the hard tier keeps a **separate** database on purpose, because `summarise()` groups by
+variant and one database holding both tiers would average them into a single row.
 
 Two things in the plan remain **unrun**, and the README does not pretend otherwise:
 
@@ -369,9 +391,21 @@ Two things in the plan remain **unrun**, and the README does not pretend otherwi
   adapters still name which vendor excludes cached input and which includes it, because that
   is why `normaliseUsage` is per-adapter at all. `docs/PRD.md` and `.superpowers/` are left
   untouched — they record what was planned and done, and editing them would falsify a log.
-- **The Gemini arm.** Its adapter *is* live-proven (one full run: 6 steps, `passed=1`,
-  `$0.0057`), but the AI Studio free tier is **20 requests/day/model** — about three runs —
-  so no sweep is possible on it without billing enabled.
+- **The Gemini arm — removed, not deferred.** On 2026-08-19 the MVP scope was fixed to
+  OpenAI only, so `src/provider/google.ts`, its three test files, `recorded/google-turn1.json`,
+  `scripts/record-google.ts`, its three price rows, its four variants, its `KEY_ENV` and
+  cache-floor entries and the `@google/genai` dependency were all deleted — the same treatment
+  the Anthropic adapter got, for a related reason. The adapter *was* live-proven (one full run:
+  6 steps, `passed=1`, `$0.0057`), but the AI Studio free tier is **20 requests/day/model**,
+  about three runs, so no sweep was ever possible on it without billing — and a second adapter
+  that cannot produce a matched arm is a second thing to keep in sync, not a finding. What it
+  taught is kept where it is load-bearing: the surviving adapter's token-accounting comments
+  still say which vendor excludes cached input and which includes it, because that is why
+  `normaliseUsage` is per-adapter at all; `CacheMode` still distinguishes implicit from
+  explicit caching, because the measured ~2-in-3 implicit miss rate is what makes the windowed
+  cache gate sound rather than arbitrary. `docs/PRD.md`, `docs/TSD.md` (§0 records both
+  removals) and `.superpowers/` keep the two-vendor design as history: editing them would
+  falsify a log. The adapter itself is one `git show` away.
 
 Every code path that would spend money throws rather than silently defaulting: `costUsd`
 throws on an unpriced model, `requireKey` throws before the first API call, and the cache
@@ -390,18 +424,23 @@ Node's own `--env-file-if-exists` — no dotenv dependency, and no key ever type
 where a shell will remember it:
 
     OPENAI_API_KEY=sk-...
-    GEMINI_API_KEY=...
 
-Absent file, absent key, or a key for a provider you did not select are all fine: Node warns
-and continues, and `requireKey` then throws only for a provider a selected variant actually
-needs. An environment variable already set in the shell **wins** over the file, so a one-off
-override still works. Only those two commands read a key — none of the five gate commands
+Absent file or absent key is fine: Node warns and continues, and `requireKey` then throws only
+for a provider a selected variant actually needs — one provider ships, but that check is a
+table lookup rather than a hardcoded name, so it stays right when a second one lands. An environment variable already set in the shell **wins** over the file, so a one-off
+override still works. Only those two commands read a key — none of the six gate commands
 does, and none is checked in.
 
 What *is* verified, end-to-end, with zero API calls:
 
-    npm run demo             # scripted provider end-to-end, plus the leak check — zero tokens
-    npm run verify-fixtures  # all 15 fixtures fail before the fix and pass after it
+    npm run demo             # the WHOLE sweep against a scripted provider — zero tokens
+    npm run verify-fixtures  # 30 fixtures: 23 fail-then-pass, 7 stay red, 8 naive fixes stay red
+    npm run evidence         # the published 121-run headline, recomputed from the databases
+
+`npm run demo` drives `runSweep` itself — startup gates, pre-warm and cache gates, the run row,
+the rerun-replaces-the-cell path, the source-side judge, and report generation — by overriding
+the provider registry, which is why it needs no key. It used to re-compose the loop and scorers
+by hand, which proved the parts and not the orchestrator.
 
 Both are green right now (`npx vitest run`, `npx tsc --noEmit`, and `npm run check-leaks`
 are too). To run the expensive `gpt-5.6-terra` arms — read the ceiling caveat above first,
@@ -417,14 +456,16 @@ they will very likely return the same 100%:
 
     npm run report -- ./eval.db ./report.html
 
-That produces `report.html` — pass rate with a bootstrap 95% CI, tamper rate, cost, and
-failure-mode breakdown, per variant — viewable by opening the file, no server required.
+That produces `report.html` — pass rate with a bootstrap 95% CI and tamper rate on one axis,
+cost against pass rate, reasoning tokens against pass rate, the step-count distribution, the
+`stop_reason` mix, and a per-run trajectory drill-down (every LLM call, tool call and result
+with per-turn tokens) — one self-contained file, viewable by opening it, no server required.
 
 ### Portability
 
 Built and measured on Windows 11, but not Windows-only. `.gitattributes` pins every checkout
 to LF so a fixture hashes identically on every platform, nothing anywhere spawns a shell, and
-every path handed to the model or written to the database is forward-slashed. The five
+every path handed to the model or written to the database is forward-slashed. The six
 zero-cost gates run in CI on `ubuntu-latest`, `windows-latest` and `macos-latest` — Node 22
 on all three plus Node 26 on Linux, because `engines` promises `>=22` and an untested promise
 is not one. All green: run 32122510801.
@@ -441,76 +482,77 @@ defects the matrix caught that local testing could not.
 | Honesty | SHA-256 over every test and config file, before and after — reported separately from pass rate |
 | Cost | Computed from actual `usage` fields across five token categories, never estimated |
 | Failure mode | `end_turn` / `max_steps` / `max_tokens` / `refusal` / `error`, with refusals and errors excluded from pass-rate denominators |
+| Our own failures | A scorer that never produced a verdict — vitest timed out or failed to spawn — is recorded as `error` with `passed = NULL`, not as a failed run. Harness infrastructure must not appear in the primary metric |
 
 A stretch scorer, opt-in via `--judge`, goes one layer deeper than the SHA-256 check: it
-asks an LLM — `gpt-5-nano`, deliberately **not** the model under test — to read the
+asks an LLM — `gpt-5-mini`, deliberately **not** the model under test — to read the
 source-side diff of a passing run and decide whether it's a hardcode, a special-case
 branch, or a mock of the unit the test exercises, versus a genuine fix. See
 `src/score/judge.ts` and TSD §9.3.
 
 ## Adding an experiment
 
-One line in `src/variants.ts`. Swapping the entire vendor is still one:
+One line in `src/variants.ts`:
 
     "nano-effort-low": { ...baseline, model: "gpt-5-nano", effort: "low" },
-    "gemini-flash":     { ...baseline, provider: "google", model: "gemini-2.5-flash" },
+
+Swapping the vendor is also one line — `{ ...baseline, provider: "acme", model: "..." }` — but
+only once an adapter is registered for it, which is three things and no more: a `Provider`
+implementation under `src/provider/`, its row in `PROVIDERS` and `KEY_ENV`, and a price row.
+`Record<ProviderId, …>` makes each of those a compile error until it is done, so the seam
+cannot be half-swapped. It has been done twice, in the other direction: see the removal notes
+above.
 
 That is the argument for building a harness instead of a script.
 
 ## Provider support
 
-Two adapters ship behind the same two-method interface (`start` → `step`, plus `prewarm`),
-both unit-tested:
+**One vendor ships: OpenAI. That is the MVP scope, and the claim here is a vendor-*ready*
+seam, not a cross-vendor finding.** The seam is real and enforced — no vendor symbol outside
+`src/provider/` (`npm run check-leaks` fails the build on one), usage normalisation and cache
+semantics owned per adapter rather than assumed, provider named by the variant and not by a
+flag, and `Record<ProviderId, …>` making an unregistered provider a compile error. It has
+carried two other adapters and outlived both of them, which is the only real evidence a seam
+ever gets. What it has never produced is a matched arm on a second vendor, so read every
+number in [The finding](#the-finding) as a single-vendor result.
+
+The adapter sits behind a three-method interface — `start` → `step`, plus `prewarm`, plus
+`complete` for the judge's structured call (TSD §9.3 adds that third method at the point it is
+needed and not before) — and is unit-tested against a recorded response:
 
 | Adapter | API | Live traffic behind anything checked in? |
 |---|---|---|
 | `src/provider/openai.ts` | Responses | **Yes** — `recorded/openai-turn2.json` is a real captured response (`resp_0f15a8…`, `gpt-5-nano-2025-08-07`). The tests mock the SDK and replay it. |
-| `src/provider/google.ts` | `generateContent` | **Yes** — `recorded/google-turn1.json` is a real capture (`gemini-2.5-flash`, `responseId IIGCav…`); the shape-by-shape cases stay inline. |
 
 **An earlier version of this section claimed that no artifact here was derived from a live API
-call. That was false when written, and is corrected rather than quietly dropped:** two of the
-recorded fixtures are real captures, and every number in [The finding](#the-finding) comes from
-live sweeps. The narrower claim is the true one, and it is the one that matters for anyone
-reproducing this — **no gate command reads a key or makes a network call**, so all five verify
-this tree offline, and the adapters are unit-tested against replayed responses rather than
+call. That was false when written, and is corrected rather than quietly dropped:** the recorded
+fixture is a real capture, and every number in [The finding](#the-finding) comes from live
+sweeps. The narrower claim is the true one, and it is the one that matters for anyone
+reproducing this — **no gate command reads a key or makes a network call**, so all six verify
+this tree offline, and the adapter is unit-tested against a replayed response rather than
 against the vendor.
 
-One live call is still *owed*, and `src/provider/google.ts` says so in its header: the disputed
-`candidatesTokenCount` question (TSD §5.3) is settled outright by a single `generateContent`
-with thinking on. Its answer is recorded nowhere in this repo, which means it is unanswered
-here — a hand-run observation someone cannot reproduce from this tree does not change that.
+`recorded/openai-turn2.json` is written by `npm run record`, which is why it carries a real
+response id and a real usage block. Regenerating it needs a key; replaying it does not.
 
-The recorded response fixtures are live captures, written by `npm run record` (OpenAI) and
-`scripts/record-google.ts` (Gemini), which is why each carries a real response id and a real
-`usageMetadata`/`billing` block. Regenerating them needs a key; replaying them does not. The
-Google tests additionally keep small responses inline for the shape-by-shape cases that one
-capture cannot cover.
+The reason usage normalisation lives in the adapter rather than in the loop is that it is
+vendor-specific and silently wrong if you assume otherwise. OpenAI's `input_tokens`
+*includes* cached tokens, so cached is subtracted, and `output_tokens` already includes
+reasoning, so reasoning is never added. Both removed adapters disagreed with that in different
+directions — one excluded cached input, one reported thinking tokens outside the candidate
+count — which is why the function is per-adapter and not one shared helper with a flag.
 
-The reason the adapters are separate rather than one is the usage accounting, which differs
-per vendor and is silently wrong if you assume otherwise:
-
-- **OpenAI** — `input_tokens` *includes* cached, so cached is subtracted; `output_tokens`
-  already includes reasoning.
-- **Google** — `promptTokenCount` includes cached (subtract), and `candidatesTokenCount`
-  *excludes* thoughts (add).
-
-One unresolved question is encoded rather than papered over: a third-party source claims
-Gemini's `candidatesTokenCount` already includes thinking tokens on the Developer API,
-contradicting the SDK's own documentation. Without a key that cannot be settled, so
-`usageArithmeticHolds()` re-derives the documented token identity from every real response
-and warns once if it ever fails — a loud signal on the first live call instead of output
-tokens quietly counted twice.
-
-The Google adapter also throttles itself (~9 RPM by default, `GEMINI_MIN_INTERVAL_MS`) and
-retries 429/5xx with backoff, because the Gemini free tier is roughly 10 RPM — below what
-even `--concurrency 1` generates. Rate limits are a vendor fact, so they live in the
-adapter, not in the runner.
+Rate limiting belongs in the adapter for the same reason: a vendor's RPM ceiling is a vendor
+fact. The removed Google adapter self-throttled to ~9 RPM because its free tier was ~10 —
+below what even `--concurrency 1` generated. OpenAI needs no such gate at the tier used here,
+so there is none; if that changes it changes in one file.
 
 ## Reproduce
 
     npm install
-    npm run demo             # zero API calls, zero tokens — proves the harness works
-    npm run verify-fixtures  # every fixture fails before, passes after
+    npm run demo             # zero API calls, zero tokens — the whole sweep, offline
+    npm run verify-fixtures  # every fixture fails before and passes after; naive fixes stay red
+    npm run evidence         # the published figures, recomputed from the tracked databases
     npm test                 # unit suite
 
     # then, with a key. Put OPENAI_API_KEY in .env.local once; sweep loads it itself.

@@ -22,6 +22,7 @@ Two things here are genuinely platform-sensitive, and both sit on the measuremen
 
 | Mechanism | Where | What it fixes |
 |---|---|---|
+| `*.db binary` | `.gitattributes` | the six tracked sweep databases are the evidence behind every published figure, and they are SQLite. Left to `text=auto` detection, one wrong guess would rewrite bytes inside pages on checkout and corrupt the record — so it is stated, not detected |
 | `* text=auto eol=lf` | `.gitattributes` | every checkout is LF, so fixture bytes and their hashes are identical on all three platforms — including on Windows, where `core.autocrlf=true` would otherwise win |
 | No `shell: true` anywhere | `src/sandbox.ts`, `scripts/verify-fixtures.mjs`, `src/report.test.ts` | `process.execPath` runs the tool's own CLI entry directly. No `cmd.exe`/`/bin/sh` re-parsing, so arguments need no hand-quoting, paths with spaces work unchanged, and a timeout signals the real process instead of a shell that leaves the grandchild orphaned |
 | `.split(path.sep).join("/")` | `tools.ts`, `score/tamper.ts`, `runner.ts`, `verify-fixtures.mjs` | every path the model or the database ever sees is forward-slashed, so trajectories and `tamperDetail` are comparable across platforms |
@@ -29,17 +30,25 @@ Two things here are genuinely platform-sensitive, and both sit on the measuremen
 | Platform-stable output | `scripts/check-leaks.mjs` | the "allowed directory" string is a literal `src/provider`, not `path.join(...)`, which used to print `src\provider/` on Windows and `src/provider/` on Linux |
 | Sandboxes under `<repo>/.aeh-tmp/` | `src/sandbox.ts` | a Windows constraint kept deliberately: Node's ESM resolver will not cross drive letters, and `os.tmpdir()` is on `C:` while a repo may be on `E:`. Harmless on POSIX, where it is simply a directory — but the *reason* is Windows-only, and it is written down so nobody "simplifies" it back to `os.tmpdir()` |
 | Node major axis | `.github/workflows/gates.yml` | `package.json` declares `engines: >=22`, so Node 22 is pinned on all three OSes and the newest major (26) additionally runs on Linux. An untested version claim is not a claim, and the native `better-sqlite3` build is the thing a Node major realistically breaks |
-| Matrix CI | `.github/workflows/gates.yml` | runs the five zero-cost gates on `ubuntu-latest`, `windows-latest` and `macos-latest`, `fail-fast: false` so a red Linux does not hide the macOS answer |
+| Matrix CI | `.github/workflows/gates.yml` | runs the six zero-cost gates on `ubuntu-latest`, `windows-latest` and `macos-latest`, `fail-fast: false` so a red Linux does not hide the macOS answer |
 
 ## What has been verified, and how
 
 Verified locally, on Windows:
 
-- **All five gates pass against an LF working tree.** Every one of the 242 tracked files was
+- **All gates pass against an LF working tree.** Every one of the 242 tracked files was
   converted to LF, making the working tree byte-identical to what Linux checks out, and then
-  `npx tsc --noEmit`, `npm test` (192 tests), `npm run check-leaks`, `npm run demo` and
-  `npm run verify-fixtures` (27 fixtures, 7 of them controls) were all run green against it.
+  `npx tsc --noEmit`, `npm test` (192 tests at the time), `npm run check-leaks`, `npm run demo`
+  and `npm run verify-fixtures` (27 fixtures, 7 of them controls) were all run green against it.
   This is the strongest available local proxy: it removes line endings as a variable entirely.
+  Re-run on Windows after the audit fixes and after the Google adapter was removed (MVP scope:
+  OpenAI only), against the same LF-pinned tree and now six gates: `npm test` **141 tests**
+  (184 before the removal took three adapter test files with it), `npm run verify-fixtures`
+  **30 fixtures — 23 solvable, 7 controls, and 8 hard-tier naive fixes each required to stay
+  red**, and `npm run evidence` recomputing 121 runs / $0.3529 from the tracked databases. The
+  older counts are left above rather than overwritten, because that bullet records a run that
+  happened. One platform note went with the adapter: `GEMINI_MIN_INTERVAL_MS` no longer exists,
+  so the only environment variable any command reads is `OPENAI_API_KEY`, and no gate reads it.
 - **Static audits.** No `shell: true` anywhere at all; exactly one `process.platform`
   branch in the whole repo, the drive-letter case in `src/tools.test.ts` that asserts
   rejection on win32 and acceptance on POSIX (see the matrix findings below) — every
