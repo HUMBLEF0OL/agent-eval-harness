@@ -115,16 +115,9 @@ export const VARIANTS: Record<string, Variant> = {
   "nano-effort-med":   { ...baseline, model: "gpt-5-nano", effort: "medium" },
   "nano-effort-low":   { ...baseline, model: "gpt-5-nano", effort: "low" },
 
-  // unrun: needs GEMINI_API_KEY. The same effort ladder as the OpenAI arm above,
-  // deliberately — a cross-vendor comparison is only worth reading if the two
-  // arms differ in the vendor and nothing else. Same SYSTEM_PROMPT, so each
-  // variant's cacheable prefix stays byte-identical across its runs (TSD §6.3).
-  "gemini-flash":        { ...baseline, provider: "google", model: "gemini-2.5-flash" },
-  "gemini-effort-med":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "medium" },
-  "gemini-effort-low":   { ...baseline, provider: "google", model: "gemini-2.5-flash", effort: "low" },
-  "gemini-no-run-tests": { ...baseline, provider: "google", model: "gemini-2.5-flash",
-                           tools: ALL_TOOLS.filter(t => t.name !== "run_tests") },
-  // 3.5-flash-lite, not 2.5: the 2.5 lite model 404s on a new API key
-  // ("no longer available to new users"), verified live 2026-08-17.
-  "gemini-lite":         { ...baseline, provider: "google", model: "gemini-3.5-flash-lite" },
+  // The four Gemini variants were removed with the adapter (2026-08-19, MVP scope:
+  // OpenAI only). What they were shaped for is worth keeping: they mirrored the
+  // OpenAI ladder exactly, because a cross-vendor comparison is only readable if
+  // the two arms differ in the vendor and NOTHING else — same SYSTEM_PROMPT
+  // included, so each variant's cacheable prefix stays byte-identical (TSD §6.3).
 };

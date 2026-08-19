@@ -87,19 +87,15 @@ export const PRICES: Record<string, Price> = {
   // refuses that pairing. Both rows re-read off developers.openai.com/api/docs/pricing
   // on 2026-08-17, which also confirmed the gpt-5-nano row above unchanged.
   "gpt-5-mini":       { provider: "openai",    in: 0.25, cached: 0.025, out:  2.00 },
-  // Sonnet 5 rate is introductory, expires 2026-08-31; then 3.00 / 0.30 / 15.00.
-  // Read off Google's own pricing page (ai.google.dev/gemini-api/docs/pricing),
-  // paid text tier, on 2026-08-16. Third-party aggregators listed DIFFERENT
-  // numbers for both models; the vendor page wins. `gemini-2.5-pro` is absent
-  // for the same reason `gpt-5.6` is — its pricing was not verified here.
-  // Only models REACHABLE with a new API key are listed. `models.list()` still
-  // advertises `gemini-2.5-flash-lite`, but calling it returns 404 "no longer
-  // available to new users" (verified live, 2026-08-17) — a price row for an
-  // unreachable model is an invitation to configure a variant that cannot run.
-  "gemini-2.5-flash":      { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
-  "gemini-3.5-flash-lite": { provider: "google", in: 0.30, cached: 0.03, out: 2.50 },
-  "gemini-3.5-flash":      { provider: "google", in: 1.50, cached: 0.15, out: 9.00 },
 };
+
+// The Google rows were removed with the adapter (2026-08-19, MVP scope: OpenAI only).
+// The rule they were added under still governs this table and is the reason it is
+// short: a model gets a row only when its price was read off the VENDOR's own page —
+// third-party aggregators disagreed with Google's on both Gemini models — and only
+// when the model is reachable with a fresh key. `gpt-5.6` has no row for the first
+// reason. A price row for a model nobody can call is an invitation to configure a
+// variant that cannot run, which is exactly what an unrunnable arm costs.
 
 /** Context ceilings used for conservative request admission. A price row alone is
  *  insufficient: a model is hard-cap eligible only after its context limit is verified. */

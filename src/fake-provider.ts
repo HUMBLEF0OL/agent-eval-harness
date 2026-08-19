@@ -16,7 +16,10 @@ export interface FakeProvider extends Provider {
 export function makeFakeProvider(script: ScriptedStep[]): FakeProvider {
   const p: FakeProvider = {
     id: "openai",
-    cacheMode: "explicit",     // matches the id it claims; keeps loop/demo behaviour unchanged
+    // Matches the adapter it impersonates: openaiProvider is "implicit", because a
+    // live keyed request still missed. Claiming "explicit" here would have let the
+    // demo's sweep pass under a gate no real OpenAI sweep runs under.
+    cacheMode: "implicit",
     lastResults: null,
     prewarmUsage: { ...zeroUsage(), inputTokens: 1500 },
     start(_cfg: SessionConfig, _task: string): Session {

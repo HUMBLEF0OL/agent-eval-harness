@@ -13,7 +13,7 @@ const OPTION_NAMES = [
  *
  *  The inherited environment is scrubbed of `npm_config_<our option names>` first, so
  *  a test means the same thing whether the suite was launched by `npm test`, `npx
- *  vitest` or an editor. The three provider keys are scrubbed for the same reason:
+ *  vitest` or an editor. The provider key is scrubbed for the same reason:
  *  the well-formed case below asserts the run stops at requireKey, which would break
  *  for anyone whose shell happens to export a key. Note this spawns cli.ts directly
  *  rather than through `npm run sweep`, so it never picks up .env.local either — the
@@ -21,7 +21,7 @@ const OPTION_NAMES = [
 function cli(args: string[], env: Record<string, string> = {}) {
   const clean = { ...process.env };
   for (const n of OPTION_NAMES) delete clean[`npm_config_${n}`];
-  for (const k of ["OPENAI_API_KEY", "GEMINI_API_KEY"]) delete clean[k];
+  delete clean["OPENAI_API_KEY"];
   const r = spawnSync(
     process.execPath,
     [path.join(HARNESS_ROOT, "node_modules", "tsx", "dist", "cli.mjs"),

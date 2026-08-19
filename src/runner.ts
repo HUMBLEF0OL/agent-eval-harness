@@ -9,7 +9,7 @@ import { diffHashes, hashGuardedFiles } from "./score/tamper.js";
 import { scoreTests, type TestVerdict } from "./score/tests.js";
 import { openStore, type RunRow } from "./store.js";
 import { makeTools } from "./tools.js";
-import { VARIANTS, type Variant } from "./variants.js";
+import { VARIANTS } from "./variants.js";
 import { JUDGE_MODEL } from "./types.js";
 import type { CacheMode, EventInput, Provider, ProviderId, SessionConfig, UsageTotals } from "./types.js";
 
@@ -64,13 +64,13 @@ export function classifyRun(
 // in runSweep below never actually fires; it exists to fail loudly if that ever
 // changes rather than silently judging a model against itself.
 
-/** A lookup, not a ternary. The old `p === "openai" ? OPENAI : <other>` shape
- *  asked for the WRONG variable the moment a third provider existed, and it did
- *  so silently — the sweep would refuse to start naming a key you do not need.
- *  `Record<ProviderId, string>` makes a fourth provider a compile error instead. */
+/** A lookup, not a ternary, even at one entry. The `p === "openai" ? OPENAI : <other>`
+ *  shape this replaced asked for the WRONG variable the moment a second provider
+ *  existed, and did it silently — the sweep refused to start naming a key you do not
+ *  need. `Record<ProviderId, string>` makes the next provider a compile error instead,
+ *  which is the whole value of the table and does not depend on how many rows it has. */
 const KEY_ENV: Record<ProviderId, string> = {
   openai: "OPENAI_API_KEY",
-  google: "GEMINI_API_KEY",
 };
 
 export function requireKey(p: ProviderId): void {
@@ -78,25 +78,20 @@ export function requireKey(p: ProviderId): void {
   if (!process.env[k]) throw new Error(`${k} is not set, required by a selected variant`);
 }
 
-/** Smallest prefix a vendor will cache at all. Per-MODEL, which is why the floor
- *  is no longer one hardcoded number: 1024 on OpenAI and Gemini 2.5 Flash, 2048
- *  on Gemini 2.5 Pro. Keyed on the model prefix alone because model names are
- *  already vendor-unique; anything unlisted gets the 1024 default. */
-const CACHE_MINIMUM: Array<[string, number]> = [
-  ["gemini-2.5-pro", 2048],
-];
-
-/** Both vendors document the threshold as the point caching *starts* working and
- *  OpenAI's as inconsistent just above it, so the floor carries margin. */
-const MARGIN = 76;
-
-export function cacheFloor(v: Pick<Variant, "model">): number {
-  return (CACHE_MINIMUM.find(([m]) => v.model.startsWith(m))?.[1] ?? 1024) + MARGIN;
-}
+/** Smallest prefix OpenAI will cache at all, plus margin: the vendor documents 1024
+ *  as the point caching *starts* working and describes it as inconsistent just above
+ *  that, so the floor is not the bare threshold.
+ *
+ *  This was a per-MODEL lookup while a second vendor shipped, because the minimum is
+ *  a model property, not a vendor one — Gemini 2.5 Pro wanted 2048 where Flash wanted
+ *  1024. With one adapter the table held a single row and a default, so it is a
+ *  constant again; `assertPrefixLongEnough` still takes the floor as a parameter, so
+ *  a model with a higher minimum needs a lookup here and nothing else. */
+export const CACHE_FLOOR = 1024 + 76;
 
 /** Every vendor fails silently when the prefix is too short. This is the check
  *  that turns a silent 5x cost error into a startup failure (TSD §6.4). */
-export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = 1024 + MARGIN): void {
+export function assertPrefixLongEnough(name: string, warm: UsageTotals, floor = CACHE_FLOOR): void {
   const prefix = promptTokens(warm);
   // A zero is NOT a short prompt — it means the pre-warm response carried no usable
   // usage at all, which no amount of lengthening SYSTEM_PROMPT can fix. Observed live:
@@ -153,11 +148,14 @@ export async function prewarmWithRetry(
 }
 
 /** How many completed runs of evidence the cache gate needs before a zero means
- *  anything. Explicit vendors set a cache key or breakpoint and a warm prefix
- *  reads reliably, so one run is already proof. Implicit caching (Gemini 2.5+)
- *  is best-effort with no control surface: measured on gemini-2.5-flash, two of
- *  three recorded sessions read nothing while the third read the full prefix, so
- *  a single zero says nothing and a per-run assert would abort a healthy sweep. */
+ *  anything. Explicit vendors set a cache key or breakpoint and a warm prefix reads
+ *  reliably, so one run is already proof — nothing shipped declares that mode.
+ *  Implicit caching is best-effort with no control surface, and it governs the ONE
+ *  adapter that ships: `prompt_cache_key` improves OpenAI's routing affinity but
+ *  guarantees nothing, and a live keyed request missed. Measured on the Gemini
+ *  adapter this rule was written for, two of three recorded sessions read nothing
+ *  while the third read the full prefix, so a single zero says nothing and a
+ *  per-run assert would abort a healthy sweep. */
 export const CACHE_WINDOW: Record<CacheMode, number> = { explicit: 1, implicit: 8 };
 
 /** The floor under the capped window: fewer completed runs than this cannot
@@ -308,9 +306,6 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
     if (!variant) throw new Error(`unknown variant: ${name}`);
     const provider = registry[variant.provider];
     if (!provider) throw new Error(`unknown provider ${variant.provider} in variant ${name}`);
-    if (liveBudget && variant.provider !== "openai") {
-      throw new Error(`variant ${name}: hard live-budget enforcement currently supports OpenAI only`);
-    }
     if (needsKey(variant.provider)) requireKey(variant.provider);   // fail before spending an hour
     costUsd(variant.model, zeroUsage());   // throws on an unpriced model — before any spend
     if (liveBudget) maxOpenAIRequestCostUsd(variant.model, 16000);
@@ -338,7 +333,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
       liveBudget,
     };
     console.log(`[${name}] pre-warming cache…`);
-    assertPrefixLongEnough(name, await prewarmWithRetry(name, provider, cfg), cacheFloor(variant));
+    assertPrefixLongEnough(name, await prewarmWithRetry(name, provider, cfg), CACHE_FLOOR);
     warmed.push({ name, variant, provider, cfg });
   }
 

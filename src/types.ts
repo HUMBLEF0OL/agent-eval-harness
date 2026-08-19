@@ -1,5 +1,11 @@
 export type Effort = "low" | "medium" | "high" | "xhigh";
-export type ProviderId = "openai" | "google";
+export type ProviderId = "openai";
+/** How a vendor's prompt caching behaves, which decides how the cache-integrity gate
+ *  may be read. Both values are real vendor behaviours; only "implicit" has an
+ *  implementation today, because the one shipped adapter is OpenAI and a live keyed
+ *  request still missed (see openaiProvider.cacheMode). "explicit" is kept because
+ *  the distinction is what makes the windowed gate sound rather than arbitrary — an
+ *  adapter that can prove a warm read needs no window. */
 export type CacheMode = "explicit" | "implicit";
 
 /** The cheat judge always runs on this model, never on the model under test

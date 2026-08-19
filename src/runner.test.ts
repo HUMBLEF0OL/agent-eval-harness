@@ -2,7 +2,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
-  assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
+  assertFixtureIntact, assertPrefixLongEnough, CACHE_FLOOR, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
   cacheVerdict, classifyRun, loadFixtures, pool, prewarmWithRetry, requireKey, UNSCORED,
 } from "./runner.js";
 import { zeroUsage } from "./cost.js";
@@ -54,13 +54,24 @@ describe("assertPrefixLongEnough", () => {
       .toThrow(/Lengthen SYSTEM_PROMPT/);
   });
 
-  it("honours a higher per-variant floor and names the floor it missed", () => {
-    // 1200 clears the default floor but not Gemini 2.5 Pro's 2048 + margin, which
-    // is the whole reason the floor is no longer one hardcoded number.
+  it("honours a higher floor than the default and names the one it missed", () => {
+    // The floor is a parameter, not a constant read from inside: a model with a
+    // higher caching minimum is then a call-site change and nothing more.
     const warm = { ...zeroUsage(), inputTokens: 1200 };
-    expect(() => assertPrefixLongEnough("gemini-pro", warm)).not.toThrow();
-    expect(() => assertPrefixLongEnough("gemini-pro", warm, 2124))
+    expect(() => assertPrefixLongEnough("nano", warm)).not.toThrow();
+    expect(() => assertPrefixLongEnough("nano", warm, 2124))
       .toThrow(/1200 tokens, below this variant's 2124-token floor/);
+  });
+});
+
+describe("CACHE_FLOOR", () => {
+  it("is OpenAI's 1024-token caching minimum plus margin", () => {
+    expect(CACHE_FLOOR).toBe(1100);
+    // The default in assertPrefixLongEnough must not drift away from it.
+    expect(() => assertPrefixLongEnough("nano", { ...zeroUsage(), inputTokens: CACHE_FLOOR - 1 }))
+      .toThrow(/below this variant's 1100-token floor/);
+    expect(() => assertPrefixLongEnough("nano", { ...zeroUsage(), inputTokens: CACHE_FLOOR }))
+      .not.toThrow();
   });
 });
 
@@ -105,18 +116,6 @@ describe("prewarmWithRetry", () => {
   });
 });
 
-describe("cacheFloor", () => {
-  it("defaults to 1024 plus margin", () => {
-    expect(cacheFloor({ model: "gpt-5.6-terra" })).toBe(1100);
-    expect(cacheFloor({ model: "gemini-2.5-flash" })).toBe(1100);
-    expect(cacheFloor({ model: "gemini-3.5-flash-lite" })).toBe(1100);
-  });
-
-  it("raises the floor for models whose caching minimum is higher", () => {
-    expect(cacheFloor({ model: "gemini-2.5-pro" })).toBe(2124);
-  });
-});
-
 describe("cacheVerdict", () => {
   it("aborts an explicit vendor on the very first completed run that read nothing", () => {
     const v = cacheVerdict("explicit", 1, 0);
@@ -130,8 +129,9 @@ describe("cacheVerdict", () => {
   });
 
   it("does NOT abort an implicit vendor before the window closes", () => {
-    // The bug this exists to fix: Gemini legitimately reports 0 on any single
-    // run, so a sweep must survive a run of misses short of the whole window.
+    // The bug this exists to fix: an implicit vendor legitimately reports 0 on any
+    // single run, so a sweep must survive a run of misses short of the whole window.
+    // Measured at roughly 2 misses in 3 on the adapter this rule was written for.
     for (let runs = 1; runs < CACHE_WINDOW.implicit; runs++) {
       expect(cacheVerdict("implicit", runs, 0)).toBeNull();
     }
@@ -160,8 +160,8 @@ describe("cacheVerdict", () => {
     // The G4 bug: `--tasks 001-off-by-one --reps 1` gives a 1-cell sweep, the
     // runner caps the window at 1, and the gate collapsed back to the single-run
     // assert that windowing existed to remove — aborting the cheapest pre-flight
-    // command the plan prescribes. One sample cannot tell a broken cache from
-    // Gemini's ~2-in-3 miss rate, so it must warn and carry on.
+    // command the plan prescribes. One sample cannot tell a broken cache from an
+    // implicit vendor's ordinary ~2-in-3 miss rate, so it must warn and carry on.
     const warned = vi.spyOn(console, "error").mockImplementation(() => {});
     try {
       for (let runs = 1; runs < CACHE_MIN_EVIDENCE; runs++) {
@@ -210,15 +210,14 @@ describe("cacheVerdict", () => {
 });
 
 describe("PROVIDERS", () => {
-  it("every provider declares a cacheMode, so a fourth adapter cannot forget it", () => {
+  it("every provider declares a cacheMode, so the next adapter cannot forget it", () => {
     for (const [id, p] of Object.entries(PROVIDERS)) {
       expect(CACHE_WINDOW[p.cacheMode], `${id} declares an unknown cacheMode`).toBeGreaterThan(0);
     }
-    // Both shipped adapters are implicit — OpenAI moved after a keyed request
-    // missed. No provider declares "explicit" any more, so the mode survives only
-    // in the contract and in cacheVerdict own test above; asserted here so a
-    // future adapter claiming it is a deliberate choice rather than a copy-paste.
-    expect(PROVIDERS.google.cacheMode).toBe("implicit");
+    // The one shipped adapter is implicit — OpenAI moved there after a keyed request
+    // missed. Nothing declares "explicit", so that mode survives only in the contract
+    // and in cacheVerdict's own tests above; asserted here so an adapter claiming it
+    // is a deliberate choice rather than a copy-paste.
     expect(PROVIDERS.openai.cacheMode).toBe("implicit");
     expect(Object.values(PROVIDERS).some(p => p.cacheMode === "explicit")).toBe(false);
   });
@@ -261,12 +260,16 @@ describe("requireKey", () => {
     vi.unstubAllEnvs();
   });
 
-  it("asks google for GEMINI_API_KEY, not for the wrong vendor's key", () => {
-    // The ternary this replaced would have demanded the other vendor key here.
-    vi.stubEnv("GEMINI_API_KEY", "");
-    vi.stubEnv("OPENAI_API_KEY", "set-but-irrelevant");
-    expect(() => requireKey("google")).toThrow(/GEMINI_API_KEY/);
-    vi.unstubAllEnvs();
+  it("names the key of the provider asked for, not of some other one", () => {
+    // The paired case ("asks google for GEMINI_API_KEY") went with the Google
+    // adapter. The property it protected is table-shaped and outlives it: every
+    // registered provider must have an entry, or a sweep fails at startup naming
+    // `undefined`. One provider, so this is now exhaustive.
+    for (const id of Object.keys(PROVIDERS) as Array<keyof typeof PROVIDERS>) {
+      vi.stubEnv("OPENAI_API_KEY", "");
+      expect(() => requireKey(id)).toThrow(/^[A-Z0-9_]+ is not set/);
+      vi.unstubAllEnvs();
+    }
   });
 });
 

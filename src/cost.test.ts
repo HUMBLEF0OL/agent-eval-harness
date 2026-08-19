@@ -28,15 +28,16 @@ describe("costUsd", () => {
     expect(withReasoning).toBe(without);
   });
 
-  it("prices each token category at its own rate for a Gemini model too", () => {
-    // gemini-2.5-flash: in 0.30, cached 0.03, out 2.50 per 1M
-    const cost = costUsd("gemini-2.5-flash", u({
+  it("prices a second model off its own row, not off one hardcoded rate", () => {
+    // gpt-5-nano: in 0.05, cached 0.005, out 0.40 per 1M — the arm every recorded
+    // sweep actually ran on, so a wrong row here misprices the published numbers.
+    const cost = costUsd("gpt-5-nano", u({
       inputTokens: 1_000_000,
-      cacheWriteTokens: 1_000_000,   // 1.25x input = 0.375
-      cacheReadTokens: 1_000_000,    // 0.03
-      outputTokens: 1_000_000,       // 2.50
+      cacheWriteTokens: 1_000_000,   // 1.25x input = 0.0625
+      cacheReadTokens: 1_000_000,    // 0.005
+      outputTokens: 1_000_000,       // 0.40
     }));
-    expect(cost).toBeCloseTo(0.30 + 0.375 + 0.03 + 2.50, 6);
+    expect(cost).toBeCloseTo(0.05 + 0.0625 + 0.005 + 0.40, 6);
   });
 
   it("can price the judge model, or --judge would abort every sweep it runs on", () => {
@@ -52,11 +53,13 @@ describe("costUsd", () => {
     expect(PRICES["gpt-5.6"]).toBeUndefined();
   });
 
-  it("has no price entry for gemini-2.5-pro — same reason", () => {
-    // Google's page lists a tiered Pro rate that was not verified here, so the
-    // model is unpriced and costUsd refuses it rather than inventing a number.
-    expect(PRICES["gemini-2.5-pro"]).toBeUndefined();
-    expect(() => costUsd("gemini-2.5-pro", zeroUsage())).toThrow(/no price for model/);
+  it("prices only models this harness can actually call", () => {
+    // The rule the removed Gemini rows lived under, kept as a check instead of a
+    // comment: a price row for a model with no adapter behind it is an invitation to
+    // configure a variant that cannot run, and it would be priced convincingly.
+    expect(Object.values(PRICES).every(p => p.provider === "openai")).toBe(true);
+    expect(PRICES["gemini-2.5-flash"]).toBeUndefined();
+    expect(() => costUsd("gemini-2.5-flash", zeroUsage())).toThrow(/no price for model/);
   });
 });
 

@@ -4,6 +4,9 @@ import { join, relative, sep } from "node:path";
 // Covers every import form that can reach a vendor SDK — static `from "x"`,
 // bare `import "x"`, dynamic `import("x")`, `require("x")` — and any subpath
 // (`openai/resources`), because each of those bypassed the old `from`-only regex.
+// Only `openai` is a dependency now; the two removed SDKs stay in the pattern on
+// purpose, so re-adding an adapter outside src/provider/ fails here rather than
+// after someone has already imported it in three places.
 const VENDOR = /\b(?:from|import|require)\s*\(?\s*["'](?:openai|@anthropic-ai\/sdk|@google\/genai)(?:\/[^"']*)?["']/;
 // A display string, deliberately NOT path.join: joining produced "src\provider" on
 // Windows and "src/provider" on Linux, so this script's own output differed by platform
