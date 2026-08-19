@@ -172,9 +172,24 @@ report-judge.html
 # remembered, which is how eval-budget-smoke.db and report-control-final.html ended
 # up untracked-but-visible in a portability commit. report.html is the ONE committed
 # report (the recorded finding) so it is force-included below.
+#
+# The six databases behind the published 121-run result are force-included TOO, and
+# deliberately: with them ignored, a fresh clone could read "121 runs for $0.353,
+# twelve judged cheats, zero tampering" and had no way to check any of it — not the
+# totals, not a judge verdict, not one trajectory. They are listed by name rather
+# than un-globbed, so a NEW ad-hoc sweep database is still ignored by default and
+# only becomes evidence when someone adds it here and to RECORDED in src/evidence.ts,
+# which `npm run evidence` then holds to the published number.
+# WAL files stay ignored: checkpoint before committing, or the .db is incomplete.
 eval*.db
 eval*.db-wal
 eval*.db-shm
 smoke*.db*
 report-*.html
 !report.html
+!eval.db
+!eval-hard.db
+!eval-control.db
+!eval-judge.db
+!eval-control-final-retry.db
+!eval-budget-smoke.db

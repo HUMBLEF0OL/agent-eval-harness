@@ -1,3 +1,8 @@
 # Scoring SHA-256s fixture file bytes, so line endings must not vary by platform.
-# Every tracked file here is text (.ts/.json/.md/.mjs/.html), so no binary escapes.
 * text=auto eol=lf
+
+# The six tracked sweep databases are the evidence behind every published number
+# (see src/evidence.ts). They are SQLite, so `text=auto` guessing wrong even once
+# would rewrite bytes inside pages on checkout and corrupt the record. Marked
+# binary explicitly rather than left to detection.
+*.db binary

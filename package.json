@@ -14,7 +14,8 @@
     "judge-check": "tsx --env-file-if-exists=.env.local scripts/judge-check.ts",
     "record": "tsx --env-file-if-exists=.env.local scripts/record-openai.ts",
     "sweep": "tsx --env-file-if-exists=.env.local src/cli.ts",
-    "report": "tsx src/report.ts"
+    "report": "tsx src/report.ts",
+    "evidence": "tsx src/evidence.ts"
   },
   "dependencies": {
     "@google/genai": "^2.17.1",

@@ -27,7 +27,7 @@ jobs:
           node-version: ${{ matrix.node }}
           cache: npm
       - run: npm ci
-      # The five gates. None reads an API key or makes a network call (README
+      # The six gates. None reads an API key or makes a network call (README
       # §"What is verified, end-to-end, with zero API calls"), which is exactly
       # what makes them runnable here.
       - run: npx tsc --noEmit
@@ -35,3 +35,6 @@ jobs:
       - run: npm run check-leaks
       - run: npm run demo
       - run: npm run verify-fixtures
+      # Recomputes every published figure from the tracked sweep databases, so a
+      # README number that drifts from its evidence fails CI rather than standing.
+      - run: npm run evidence
