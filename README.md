@@ -333,16 +333,29 @@ That discipline is the deliverable. Total cost of finding out: **$0.353** across
 databases are tracked — runs, per-run costs, judge verdicts, and all 3,351 trajectory events —
 and `npm run evidence` recomputes the headline from them:
 
-    npm run evidence   # 121 runs, $0.3529, 0 tampered, 12 judged cheats — or it exits 1
+    npm run evidence   # 121 runs, $0.3529, 3351 events, 0 tampered, 12 cheats, 0 superseded
 
-That gate is in CI. If a README figure and its database ever disagree, the disagreement fails
-the build instead of standing. The per-sweep breakdown and what each sweep was for live in
-`src/evidence.ts`; open any database with `sqlite3`, or regenerate a report from it with
+Every one of those six numbers is recomputed from the databases and every one of them can fail
+the build. The event count is there because "stored with complete replayable trajectories" is a
+claim as much as the cost is, and it is the one the gate used to *print* without checking — 3,351
+events could have drained away a hundred at a time with every other total still reconciling.
+
+The last number is the provenance one. Re-running a cell replaces its live row, because the
+metrics want the latest attempt per cell — but the attempt it replaces is **archived**, row and
+full trajectory, into `superseded_runs` / `superseded_events` rather than deleted. So
+`superseded=0` across all six databases is not a description of the schema, it is evidence:
+nothing in the published corpus was ever re-run, and these files are its whole history rather
+than the surviving layer of it. A re-run after publication makes the gate fail until `PUBLISHED`
+is updated to say so, with the displaced attempt readable on disk.
+
+Reading the evidence cannot change it: `npm run report` and `npm run evidence` open these
+databases **read-only**, because a plain open writes — a journal-mode header, and any table the
+schema has gained since the file was written. Two tests hold that: one checksums a database
+across a `readSweep`, one across a full report build.
+
+The per-sweep breakdown and what each sweep was for live in `src/evidence.ts`; open any database
+with `sqlite3`, or regenerate a report from it with
 `npm run report -- ./eval-hard.db ./report-hard.html`.
-
-One limit worth stating: re-running a cell **replaces** its row and its events (`INSERT OR
-REPLACE`, plus `clearEvents`), so a database is the current state of each cell, not an
-append-only log of every attempt ever made. What is published is what these files hold.
 
 Cost figures are computed from measured usage at list prices. Reproduce with:
 
@@ -515,6 +528,14 @@ flag, and `Record<ProviderId, …>` making an unregistered provider a compile er
 carried two other adapters and outlived both of them, which is the only real evidence a seam
 ever gets. What it has never produced is a matched arm on a second vendor, so read every
 number in [The finding](#the-finding) as a single-vendor result.
+
+**Three specific things would close that gap, and none of them is done:** a second adapter, a
+matched arm run on it against the same fixtures and prompt, and a cross-vendor token-accounting
+test driven by two real recorded responses. Until then this is architecture, not evidence, and
+the gap is a deliberate MVP scope decision rather than an oversight. What a single-vendor tree
+*can* still hold itself to is asserted: every registered provider must have a key row and at
+least one priced model (a half-registered vendor otherwise fails at startup naming `undefined`,
+or after the first paid call), and every price row must name a provider that actually ships.
 
 The adapter sits behind a three-method interface — `start` → `step`, plus `prewarm`, plus
 `complete` for the judge's structured call (TSD §9.3 adds that third method at the point it is

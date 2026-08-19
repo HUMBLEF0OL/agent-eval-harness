@@ -10,6 +10,32 @@
 
 ---
 
+## 0.2 What changed in rev 5
+
+Two provenance defects closed, both found by audit rather than by use.
+
+**A re-run no longer destroys the attempt it replaces.** `runs.id` is deterministic, so a
+re-run of a cell replaces its row (`INSERT OR REPLACE`) and its events were `DELETE`d before the
+new stream was written. That is right for the metrics — a cell has one current result — and
+wrong as a record: the earlier attempt was simply gone, which made every database a current
+snapshot rather than an experimental log. `supersede(runId)` now archives the row and its whole
+trajectory into `superseded_runs` / `superseded_events` (mirroring columns, with an `attempt`
+number counting from 1) inside one transaction, then clears the live stream. `allRuns()` and
+`eventsForRun()` are unchanged, so nothing downstream had to learn about it — see §8.
+
+**Reading evidence cannot write to it.** `openStore(path, { readonly: true })` skips the journal
+pragma and the `CREATE TABLE IF NOT EXISTS` schema exec, both of which write to the file. The
+report and the evidence gate both use it. Without this, the *arrival* of the archive tables
+above would have silently rewritten the six tracked sweep databases the moment anything read
+them — the schema exec creates a missing table on open. A pre-archive database is READ, never
+migrated: `supersededRuns()` checks `sqlite_master` and returns empty rather than throwing.
+
+The evidence gate gained the two claims it was printing but not checking: total trajectory
+events (3,351) and total superseded attempts (0). The second is the interesting one — it turns
+"nothing in the published corpus was re-run" from a description of the code into a checked fact.
+
+---
+
 ## 0.1 What changed in rev 4
 
 The **Google adapter was removed on 2026-08-19**, when MVP scope was fixed to OpenAI only:
@@ -923,7 +949,19 @@ CREATE INDEX idx_events_run ON events(run_id, seq);
 CREATE INDEX idx_runs_variant ON runs(variant, task_id);
 ```
 
-`runs.id` is deterministic, so a re-run of the same cell replaces rather than duplicates. Writes use `INSERT OR REPLACE`.
+```sql
+-- Rev 5. A re-run replaces the live row and stream; these hold what it displaced.
+-- Column-for-column mirrors of runs/events with `attempt` prepended, which is what
+-- lets supersede() archive with `INSERT INTO superseded_x SELECT ?, * FROM x`
+-- instead of restating 25 columns in two more places.
+CREATE TABLE superseded_runs   (attempt INTEGER NOT NULL, <every runs column>);
+CREATE TABLE superseded_events (attempt INTEGER NOT NULL, <every events column>);
+CREATE INDEX idx_superseded_events_run ON superseded_events(run_id, attempt, seq);
+```
+
+`runs.id` is deterministic, so a re-run of the same cell replaces rather than duplicates. Writes use `INSERT OR REPLACE`, and the runner calls `supersede(runId)` first: the replaced attempt is archived with an `attempt` number, never dropped. The live tables therefore answer "what is this cell's current result" — which is what every metric wants — while the archive answers "what happened before that", which is what an auditor wants. `attempt` counts from 1 in supersede order, so the highest number is the attempt the live row directly replaced.
+
+Two consequences worth naming. A database written before rev 5 has no archive tables and is **read, never migrated** — migrating would rewrite tracked evidence — so the accessors check `sqlite_master` and return empty. And because the schema exec would create those tables on open, anything that only READS a database must open it `{ readonly: true }` (§14, and `src/evidence.ts`); a read that writes to its own evidence is not a read.
 
 `provider` is a column and not merely derivable from `model`, because the report groups and colours by it and a join against the price table to answer "which vendor was this" would be silly.
 

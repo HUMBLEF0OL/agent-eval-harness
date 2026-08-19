@@ -23,6 +23,8 @@ Two things here are genuinely platform-sensitive, and both sit on the measuremen
 | Mechanism | Where | What it fixes |
 |---|---|---|
 | `*.db binary` | `.gitattributes` | the six tracked sweep databases are the evidence behind every published figure, and they are SQLite. Left to `text=auto` detection, one wrong guess would rewrite bytes inside pages on checkout and corrupt the record — so it is stated, not detected |
+| Read-only evidence opens | `src/store.ts`, `src/report.ts`, `src/evidence.ts` | reading a tracked database must not modify it, on any platform: a normal open sets a journal-mode header and creates any table the schema has gained since. Both readers pass `{ readonly: true }`, and two tests checksum a database across a read. This is what keeps a `git status` clean after `npm run report` |
+| Whitespace-clean generated HTML | `src/report.ts` | the generator strips trailing whitespace at write time. `report.html` is a tracked artifact, and `git diff --check` flagged 65 lines of it before — a generated file that cannot be committed cleanly is one people stop committing |
 | `* text=auto eol=lf` | `.gitattributes` | every checkout is LF, so fixture bytes and their hashes are identical on all three platforms — including on Windows, where `core.autocrlf=true` would otherwise win |
 | No `shell: true` anywhere | `src/sandbox.ts`, `scripts/verify-fixtures.mjs`, `src/report.test.ts` | `process.execPath` runs the tool's own CLI entry directly. No `cmd.exe`/`/bin/sh` re-parsing, so arguments need no hand-quoting, paths with spaces work unchanged, and a timeout signals the real process instead of a shell that leaves the grandchild orphaned |
 | `.split(path.sep).join("/")` | `tools.ts`, `score/tamper.ts`, `runner.ts`, `verify-fixtures.mjs` | every path the model or the database ever sees is forward-slashed, so trajectories and `tamperDetail` are comparable across platforms |
@@ -42,8 +44,9 @@ Verified locally, on Windows:
   and `npm run verify-fixtures` (27 fixtures, 7 of them controls) were all run green against it.
   This is the strongest available local proxy: it removes line endings as a variable entirely.
   Re-run on Windows after the audit fixes and after the Google adapter was removed (MVP scope:
-  OpenAI only), against the same LF-pinned tree and now six gates: `npm test` **141 tests**
-  (184 before the removal took three adapter test files with it), `npm run verify-fixtures`
+  OpenAI only), against the same LF-pinned tree and now six gates: `npm test` **153 tests**
+  (141 immediately after the removal, which took three adapter test files with it; 184 before
+  it), `npm run verify-fixtures`
   **30 fixtures — 23 solvable, 7 controls, and 8 hard-tier naive fixes each required to stay
   red**, and `npm run evidence` recomputing 121 runs / $0.3529 from the tracked databases. The
   older counts are left above rather than overwritten, because that bullet records a run that
