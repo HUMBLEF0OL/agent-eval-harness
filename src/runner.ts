@@ -360,9 +360,13 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
           fs.cpSync(path.join(fixture.dir, "repo"), root, { recursive: true });
           const before = hashGuardedFiles(root);
 
-          // Re-running a cell replaces its trajectory; without this the second
-          // run interleaves with the first under duplicate seq values.
-          store.clearEvents(runId);
+          // Re-running a cell replaces its live row and trajectory — without the
+          // clear, the second run interleaves with the first under duplicate seq
+          // values. The replaced attempt is ARCHIVED rather than dropped: the
+          // metrics want the latest attempt per cell, but a database that silently
+          // forgets an earlier one is a snapshot pretending to be a record.
+          const superseded = store.supersede(runId);
+          if (superseded) console.log(`  ${runId}  previous attempt archived as #${superseded}`);
           const emit = (e: EventInput) => store.insertEvent(runId, e);
           const result = await runLoop(provider, cfg, fixture.meta.prompt, makeTools(root), emit);
 

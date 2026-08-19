@@ -165,10 +165,19 @@ async function scenario(name: string, script: ScriptedStep[]) {
   const again = openStore(db);
   const rerunRuns = again.allRuns();
   const rerunEvents = again.eventsForRun("001-off-by-one:nano:0");
+  const archived = again.supersededRuns();
+  const archivedEvents = again.supersededEventsForRun("001-off-by-one:nano:0", 1);
   again.close();
   assert.equal(rerunRuns.length, 1, "a rerun must replace the row, not add one");
   assert.deepEqual(rerunEvents.map(e => e.seq), events.map(e => e.seq),
     "a rerun must replace the trajectory, not interleave a second one");
+  // Replaced, not forgotten: the metrics read the latest attempt, and the attempt it
+  // displaced stays on disk with its own trajectory.
+  assert.equal(archived.length, 1, "the superseded attempt must be archived, not dropped");
+  assert.equal(archived[0]!.attempt, 1);
+  assert.equal(archived[0]!.id, "001-off-by-one:nano:0");
+  assert.deepEqual(archivedEvents.map(e => e.seq), events.map(e => e.seq),
+    "the archived attempt must keep its own full trajectory");
 
   buildReport(db, out);
   const html = fs.readFileSync(out, "utf8");
@@ -176,7 +185,7 @@ async function scenario(name: string, script: ScriptedStep[]) {
   assert.match(html, /Source cheat/, "the judge column must appear once the judge has run");
   assert.match(html, /Trajectory/, "the report must carry the per-run drill-down");
   fs.rmSync(dbDir, { recursive: true, force: true });
-  console.log("ok  full sweep: 1 run row, judge verdict, rerun replaced, report written");
+  console.log("ok  full sweep: 1 run row, judge verdict, rerun archived + replaced, report written");
 }
 
 // ── Scenario 6: no vendor SDK outside src/provider/ ──────────────────────────

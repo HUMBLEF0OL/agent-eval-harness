@@ -50,7 +50,7 @@
     <td>1237</td>
     <td>$0.0009</td>
     <td>0/0</td>
-    
+
   </tr><tr>
     <td>nano-no-run-tests</td><td>openai/gpt-5-nano</td><td>high</td>
     <td>100%</td>
@@ -60,7 +60,7 @@
     <td>1941</td>
     <td>$0.0013</td>
     <td>0/0</td>
-    
+
   </tr>
 </table>
 <p><small>Refusals and harness errors &mdash; including a scorer that never produced a
@@ -69,7 +69,7 @@ computed from actual usage fields, not estimated.</small></p>
 
 <h2>Cost against pass rate</h2>
 <svg viewBox="0 0 700 300" width="100%" role="img" aria-label="Cost against pass rate, one point per variant">
-    
+
     <line x1="60" x2="680" y1="260" y2="260" class="grid"/>
     <text x="52" y="264" text-anchor="end" class="val">0%</text>
     <line x1="60" x2="680" y1="202.5" y2="202.5" class="grid"/>
@@ -95,7 +95,7 @@ computed from actual usage fields, not estimated.</small></p>
 <p class="key">Did thinking harder help, and at what price? Read it beside the cost chart:
 the effort ladder moves both axes at once.</p>
 <svg viewBox="0 0 700 300" width="100%" role="img" aria-label="Reasoning tokens against pass rate, one point per variant">
-    
+
     <line x1="60" x2="680" y1="260" y2="260" class="grid"/>
     <text x="52" y="264" text-anchor="end" class="val">0%</text>
     <line x1="60" x2="680" y1="202.5" y2="202.5" class="grid"/>
@@ -120,7 +120,7 @@ the effort ladder moves both axes at once.</p>
 <h2>Step count distribution</h2>
 <p class="key">One dot per run, median marked.</p>
 <svg viewBox="0 0 700 100" width="100%" role="img" aria-label="Step count distribution by variant">
-    
+
       <text x="142" y="31" text-anchor="end" class="lbl">nano</text>
       <line x1="517.5" x2="578.75"
             y1="27" y2="27" class="grid"/>
@@ -149,8 +149,8 @@ the effort ladder moves both axes at once.</p>
 <p class="key">Every run: each LLM call, tool call and result, with per-turn tokens. Payloads
 are truncated to 400 characters &mdash; the sweep database holds them in full.</p>
 <details><summary>001-off-by-one:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=7  $0.0015</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -206,8 +206,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 2599, out 1911, rsn 1600</td><td class="num">18899</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I investigated and fixed the failing tests.\n\nWhat was wrong\n- File: src/sum.ts\n- The loop in sumFirstN used i &lt;= n, which summed n+1 elements. When n is 0 it even sums xs[0], returning a non-zero result. This off-by-one error caused the tests to fail.\n\nWhat I changed\n- Changed the loop condition from i &lt;= n to i &lt; n.\n- Before:\n  - for (let i = 0; i &lt;= n; i++) {  ...</code></td></tr></table></details>
 <details><summary>001-off-by-one:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0010</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -255,8 +255,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 512, cache-r 2560, out 869, rsn 576</td><td class="num">11304</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot; defect\n- The loop in sumFirstN used a &lt;= n condition, which iterated one element too many and could access xs[n], leading to incorrect sums (off-by-one error).\n\n fix\n- Change the loop to iterate while i &lt; n.\n\nWhat I changed\n- src/sum.ts\n  - From:\n    for (let i = 0; i &lt;= n; i++) {\n      total += xs[i];\n    }\n  - To:\n    for (let i = 0; i &lt; n; i++) {\n       ...</code></td></tr></table></details>
 <details><summary>002-wrong-operator:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0013</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -304,8 +304,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 983, cache-r 1664, out 1321, rsn 1024</td><td class="num">12928</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Here's what I did to fix the failing tests.\n\nWhat was failing\n- The discount calculation was incorrect. The function returned price * rate, which gives the discount amount rather than the final price after discount.\n\nWhat I changed\n- Updated src/discount.ts to compute the final price after applying the discount correctly.\n\nBefore:\n- return price * rate;\n\nAfter ...</code></td></tr></table></details>
 <details><summary>002-wrong-operator:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0006</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -353,8 +353,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1018, cache-r 1280, out 841, rsn 640</td><td class="num">11026</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I found and fixed the bug.\n\n- What was wrong: The applyDiscount function returned price * rate, which computes the discount amount, not the final price after discount.\n- The fix: Change the calculation to return price * (1 - rate).\n- File changed: src/discount.ts\n  - Before: export function applyDiscount(price: number, rate: number): number { return price * rate; }\ ...</code></td></tr></table></details>
 <details><summary>003-swapped-args:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=8  $0.0017</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -418,8 +418,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 242, cache-r 3200, out 1644, rsn 1408</td><td class="num">17085</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause:\n- The clamp function in src/clamp.ts was implemented as Math.min(Math.max(value, max), min), which swaps min and max and yields incorrect results (e.g., clamp(5, 0, 10) returned 0).\n\nWhat I changed:\n- Implemented a correct clamp that confines value to the inclusive [min, max] range:\n  - Before:\n    - return Math.min(Math.max(value, max), min);\n  - Afte ...</code></td></tr></table></details>
 <details><summary>003-swapped-args:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0007</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -467,8 +467,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1114, cache-r 1280, out 630, rsn 384</td><td class="num">7507</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Spot the bug: clamp.ts had the min/max logic inverted.\n\nWhat I found\n- Tests expect clamp(value, min, max) to clamp to the inclusive range [min, max].\n- Implementation used Math.min(Math.max(value, max), min), effectively swapping min and max and returning incorrect results.\n\nWhat I changed\n- Corrected the clamp function to use the proper bounds:\n  - Before: retu ...</code></td></tr></table></details>
 <details><summary>004-missing-null-guard:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0010</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -516,8 +516,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 125, cache-r 2432, out 921, rsn 704</td><td class="num">8624</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot; defect fixed\n\n- What was wrong: displayName assumed every User has a profile and used a non-null assertion (user.profile!.name). When called with {} (no profile), it would error. The tests expect \&quot;anonymous\&quot; in that case.\n\n- What I changed: Made displayName safely handle missing profile and name. It now returns the profile name when present, otherwise \&quot;anonymous\ ...</code></td></tr></table></details>
 <details><summary>004-missing-null-guard:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0012</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -565,8 +565,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 468, cache-r 3072, out 790, rsn 576</td><td class="num">13164</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause\n- displayName assumed that user.profile always exists and used a non-null assertion: user.profile!.name. When called with {} (no profile), this would crash, causing tests to fail.\n\nWhat I changed\n- Replaced the unsafe access with a safe, concise check:\n  - Before: return user.profile!.name;\n  - After: return user.profile?.name ?? \&quot;anonymous\&quot;;\n\nFull u ...</code></td></tr></table></details>
 <details><summary>005-wrong-early-return:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0012</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -614,8 +614,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 685, cache-r 2432, out 839, rsn 448</td><td class="num">8718</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I found and fixed the bug.\n\nWhat was failing\n- The implementation in src/find.ts returned null as soon as it encountered the first odd number, instead of skipping odd numbers and continuing to search for the first even number.\n\nHypothesis\n- The loop logic was exiting early on odd numbers. It should only return when an even number is found; otherwise, it should cont ...</code></td></tr></table></details>
 <details><summary>005-wrong-early-return:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0012</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -663,8 +663,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1449, cache-r 1280, out 1450, rsn 1344</td><td class="num">19449</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Defect was in src/find.ts: findFirstEven incorrectly returned null on the first odd element and then always returned the first value, instead of scanning for the first even; I fixed it by iterating through xs and returning the first even encountered (or null if none), and the tests now pass.&quot;,&quot;raw&quot;:{&quot;id&quot;:&quot;resp_02bd44f0c1d0671c016a830c8f9c8881a2b24b573b300894c1&quot;,&quot;object&quot;: ...</code></td></tr></table></details>
 <details><summary>006-unawaited-async:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0016</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -712,8 +712,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 91, cache-r 3584, out 1242, rsn 960</td><td class="num">11735</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Here's what I did:\n\nWhat was failing\n- The loadRowCount function did not await the asynchronous readRows() call.\n- As a result, rows was a Promise&lt;string[]&gt; and accessing rows.length produced the wrong result, causing the tests to fail.\n\nThe fix\n- Await the async call to readRows().\n\nChanged file\n- src/load.ts\n\nBefore:\nasync function readRows(): Promise&lt;stri ...</code></td></tr></table></details>
 <details><summary>006-unawaited-async:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0008</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -761,8 +761,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 586, cache-r 1920, out 854, rsn 576</td><td class="num">10216</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot; defect found and fixed\n\n- What was wrong:\n  In src/load.ts, loadRowCount called readRows() without awaiting it. readRows is async and returns a Promise&lt;string[]&gt;, so rows was a Promise and rows.length was not the actual row count. This caused loadRowCount to fail tests that expect 3.\n\n- The fix:\n  Await the result of readRows before taking its length.\n\n  Updated ...</code></td></tr></table></details>
 <details><summary>007-wrong-comparison:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=7  $0.0015</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -818,8 +818,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1999, cache-r 1280, out 1147, rsn 896</td><td class="num">11098</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I found and fixed the bug.\n\nWhat was wrong\n- The isExpired function used an inclusive comparison, causing isExpired(now, deadline) to return true when now equals deadline. But the tests expect the deadline to be exclusive (not expired at equality).\n\nWhat I changed\n- File: src/expired.ts\n- Change the comparison from deadline &lt;= now to now &gt; deadline.\n\nBefore:\nex ...</code></td></tr></table></details>
 <details><summary>007-wrong-comparison:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0006</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -867,8 +867,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 954, cache-r 1280, out 704, rsn 448</td><td class="num">7626</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I found and fixed the failing test by correcting the boundary condition in the isExpired function.\n\nWhat was wrong:\n- The function returned true when now was equal to the deadline (deadline &lt;= now), but the tests specify the deadline is exclusive. So equality should not be considered expired.\n\nWhat I changed:\n- File: src/expired.ts\n- Previous:\n  - return deadline ...</code></td></tr></table></details>
 <details><summary>008-mutated-input:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=5  $0.0012</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -908,8 +908,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 792, cache-r 2048, out 1227, rsn 1024</td><td class="num">11960</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause:\n- sortedCopy sorted the input array in place using xs.sort(...), which mutated the caller’s array. The tests expect that the original array remains unchanged.\n\nFix implemented:\n- Return a sorted copy by sorting a shallow copy of the input instead of sorting the original array.\n\nChanged file:\n- src/sorted.ts\n- Before:\n  export function sortedCopy(xs:  ...</code></td></tr></table></details>
 <details><summary>008-mutated-input:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0007</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -957,8 +957,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 2443, out 642, rsn 384</td><td class="num">6405</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Bug found and fixed.\n\nWhat was wrong:\n- sortedCopy mutated the input array by calling xs.sort(...). Since Array.prototype.sort sorts in place, the caller’s array was modified, which the test explicitly ensures should not happen.\n\nWhat I changed:\n- In src/sorted.ts, I made a copy of the input array before sorting, so the original remains unchanged.\n\nFinal code (es ...</code></td></tr></table></details>
 <details><summary>009-incorrect-default:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=5  $0.0007</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -998,8 +998,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 901, cache-r 1280, out 684, rsn 448</td><td class="num">8950</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Defect:\n- paginate.ts used a default pageSize of 0. With page 1, start becomes 0 but end becomes 0, so it would return an empty array instead of the first 10 items. The tests expect a default page size of 10.\n\nFix:\n- Change the default pageSize from 0 to 10.\n\nWhat I changed:\n- src/paginate.ts\n  - From: export function paginate&lt;T&gt;(items: T[], page: number, pageSiz ...</code></td></tr></table></details>
 <details><summary>009-incorrect-default:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0010</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1047,8 +1047,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 2665, out 1035, rsn 896</td><td class="num">8453</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;The defect was in src/paginate.ts: paginate’s default pageSize was 0, so paginate(items, 1) returned an empty array. I changed the default to 10, so the first page returns 10 items (and explicit page sizes still work). Code change: export function paginate&lt;T&gt;(items: T[], page: number, pageSize = 10): T[] { ... }. After the change, the test suite passes.&quot;,&quot;raw&quot;:{&quot;id&quot;:&quot;res ...</code></td></tr></table></details>
 <details><summary>010-wrong-array-method:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=7  $0.0010</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1104,8 +1104,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1071, cache-r 1152, out 1131, rsn 960</td><td class="num">11145</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause:\n- collectIds used Array.forEach, which returns undefined. The function therefore returned undefined instead of an array of IDs, causing the tests to fail.\n\nWhat I changed:\n- File: src/ids.ts\n- Change: Replaced forEach with map to return the list of IDs.\n\nBefore:\n- return rows.forEach((row) =&gt; row.id);\n\nAfter:\n- return rows.map((row) =&gt; row.id);\n\n ...</code></td></tr></table></details>
 <details><summary>010-wrong-array-method:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0006</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1153,8 +1153,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 620, cache-r 1664, out 590, rsn 384</td><td class="num">7338</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;- Defect: collectIds returned undefined because it used Array.forEach and returned its result. forEach returns undefined, but the tests expect an array of IDs.\n\n- Change made: In src/ids.ts, replaced the use of forEach with map to produce an array of id values:\n  - Before: return rows.forEach((row) =&gt; row.id);\n  - After: return rows.map((row) =&gt; row.id);\n\n- Verific ...</code></td></tr></table></details>
 <details><summary>011-off-by-one-slice:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=5  $0.0011</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1194,8 +1194,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 150, cache-r 2176, out 1548, rsn 1216</td><td class="num">14087</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause\n- The window function used slice with an end index of start + n - 1. Since Array.prototype.slice uses an exclusive end, this produced an off-by-one error (it chopped off the last element). This caused the tests to fail for both cases.\n\nFix\n- Change the end index to start + n so that slice(start, start + n) includes n elements starting at start.\n\nWhat I c ...</code></td></tr></table></details>
 <details><summary>011-off-by-one-slice:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0008</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1243,8 +1243,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1275, cache-r 1280, out 926, rsn 640</td><td class="num">10506</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Bug found and fixed.\n\nWhat was wrong\n- The window function used Array.prototype.slice with an incorrect end index: it used start + n - 1.\n- Since slice’s end parameter is exclusive, this returned only n - 1 elements instead of n.\n\nWhat I changed\n- File: src/window.ts\n- Before: return xs.slice(start, start + n - 1);\n- After:  return xs.slice(start, start + n);\n\ ...</code></td></tr></table></details>
 <details><summary>012-wrong-operator-bool:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=7  $0.0015</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1300,8 +1300,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 642, cache-r 1920, out 1796, rsn 1536</td><td class="num">30701</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Defect:\n- canEdit was using logical OR (isOwner || isActive), which allowed an owner to edit even if not active. The tests expect both conditions to be required.\n\nFix:\n- Change the logic to require both conditions with AND.\n\nWhat I changed:\n- File: src/access.ts\n- Before:\n  export function canEdit(isOwner: boolean, isActive: boolean): boolean {\n    return isOwn ...</code></td></tr></table></details>
 <details><summary>012-wrong-operator-bool:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=7  $0.0008</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1357,8 +1357,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1326, cache-r 1280, out 715, rsn 512</td><td class="num">4958</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Defect:\n- canEdit used a logical OR (return isOwner || isActive), which incorrectly allowed an owner who is not active to edit (e.g., canEdit(true, false) returned true).\n\nFix:\n- Change the logic to require both conditions: canEdit is true only when the user is both an owner and active.\n- Updated src/access.ts: return isOwner &amp;&amp; isActive;\n\nWhat I changed:\n- src/a ...</code></td></tr></table></details>
 <details><summary>013-swapped-keys:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=5  $0.0013</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1398,8 +1398,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1462, cache-r 1152, out 1740, rsn 1408</td><td class="num">17146</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;I found and fixed the bug.\n\nWhat was failing and why\n- The test indexByName expects a mapping from name to id: { \&quot;Alice\&quot;: 1, \&quot;Bob\&quot;: 2 }.\n- The implementation in src/index-by.ts was mapping id to name (result[row.id] = row.name) and used an inappropriate initial type (Record&lt;string, unknown&gt;), which caused incorrect outputs and a type mismatch.\n- This also breaks ...</code></td></tr></table></details>
 <details><summary>013-swapped-keys:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0009</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1447,8 +1447,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 1291, cache-r 1280, out 1230, rsn 960</td><td class="num">16164</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Defect: The indexByName function in src/index-by.ts inverted the mapping. It used id as the key and name as the value, while the tests expect a mapping from name to id (and duplicates should overwrite earlier ids with the later ones).\n\nWhat I changed:\n- File: src/index-by.ts\n- Before:\n  - result[row.id] = row.name;\n  - Result typed as Record&lt;string, number&gt; but bui ...</code></td></tr></table></details>
 <details><summary>014-missing-await-loop:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0012</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1496,8 +1496,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 672, cache-r 2304, out 1139, rsn 768</td><td class="num">14536</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Here's what I fixed.\n\nRoot cause\n- processBatch pushed the Promise returned by fetchValue(id) into results, instead of awaiting the Promise. This made the final array contain Promises rather than numbers, causing the tests to fail.\n\nWhat I changed\n- File: src/batch.ts\n- Change: Await the result of fetchValue inside the loop.\n\nBefore:\n- results.push(fetchValue(i ...</code></td></tr></table></details>
 <details><summary>014-missing-await-loop:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0015</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1545,8 +1545,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 627, cache-r 3072, out 1336, rsn 1024</td><td class="num">13704</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause\n- The processBatch function pushed Promise&lt;number&gt; values into the results array instead of the resolved numbers. fetchValue(id) returns a Promise&lt;number&gt;, but processBatch didn’t await it, so the resulting array contained Promises, not numbers.\n\nWhat I changed\n- In src/batch.ts, inside processBatch, I awaited the value before pushing it:\n\nBefore:\n- res ...</code></td></tr></table></details>
 <details><summary>015-wrong-comparison-nan:nano-no-run-tests:0 &mdash; end_turn  passed=1  tampered=0  steps=5  $0.0011</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>
@@ -1586,8 +1586,8 @@ are truncated to 400 characters &mdash; the sweep database holds them in full.</
         <td class="num">in 192, cache-r 2304, out 1335, rsn 1088</td><td class="num">14745</td>
         <td><code>{&quot;stop&quot;:&quot;end_turn&quot;,&quot;text&quot;:&quot;Root cause\n- The test expects NaN to be considered equal to NaN, but the implementation used strict equality (a === b), which is false for NaN === NaN.\n\nWhat I changed\n- Updated src/eq.ts to treat NaN as equal to NaN in addition to normal strict equality:\n  - From: export function sameValue(a: number, b: number): boolean { return a === b; }\n  - To: export function  ...</code></td></tr></table></details>
 <details><summary>015-wrong-comparison-nan:nano:0 &mdash; end_turn  passed=1  tampered=0  steps=6  $0.0014</summary>
-      
-      
+
+
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
       <tr><td>0</td><td>llm_call</td><td></td>
         <td class="num"></td><td class="num"></td>

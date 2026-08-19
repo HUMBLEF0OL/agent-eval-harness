@@ -2,7 +2,7 @@ import { spawnSync } from "node:child_process";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bootstrapCI, median, summarise } from "./report.js";
+import { bootstrapCI, buildReport, median, summarise } from "./report.js";
 import { HARNESS_ROOT, makeSandbox } from "./sandbox.js";
 import { openStore, type RunRow } from "./store.js";
 
@@ -118,8 +118,36 @@ describe("report entrypoint", () => {
       // checkable rather than something to be taken on trust.
       expect(html).toContain("<details>");
       expect(html).toContain("seq");
+      // A tracked artifact has to be committable: 65 lines of this file used to fail
+      // `git diff --check`, because an interpolation that renders to nothing leaves a
+      // line of pure indentation behind.
+      expect(html.split(/\r?\n/).filter(l => /[ \t]$/.test(l))).toEqual([]);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   }, 60_000);
+
+  // The published sweep databases are tracked evidence, and `npm run report` is the
+  // command most likely to be pointed at one. A normal open would write to it — the
+  // journal-mode header, plus any table the schema has gained since it was written —
+  // so buildReport opens read-only, and this checksums a real tracked database across
+  // a full report build to prove it.
+  it("does not modify the database it reports on", () => {
+    const dir = makeSandbox("aeh-report-ro-");
+    try {
+      const db = path.join(HARNESS_ROOT, "eval-budget-smoke.db");
+      const before = fs.readFileSync(db);
+      const out = path.join(dir, "evidence.html");
+      buildReport(db, out);
+      expect(fs.readFileSync(out, "utf8")).toContain("1 runs across 1 variants");
+      expect(fs.readFileSync(db).equals(before)).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("refuses a database that does not exist instead of reporting zero runs", () => {
+    expect(() => buildReport(path.join(HARNESS_ROOT, "no-such-sweep.db"), "unused.html"))
+      .toThrow(/no such database/);
+  });
 });

@@ -217,7 +217,12 @@ function trajectories(runs: RunRow[], eventsFor: (id: string) => StoredEvent[]):
 }
 
 export function buildReport(dbPath: string, outPath: string): void {
-  const store = openStore(dbPath);
+  // Read-only: the published sweep databases are tracked evidence, and a plain open
+  // would set a journal mode and create any table SCHEMA has gained since — writing
+  // to the file this report exists to summarise. It also turns a typo'd path into a
+  // failure instead of a confident report of 0 runs.
+  if (!fs.existsSync(dbPath)) throw new Error(`no such database: ${dbPath}`);
+  const store = openStore(dbPath, { readonly: true });
   const runs = store.allRuns();
   const rows = summarise(runs);
   const providers = [...new Set(runs.map(r => r.provider))];
@@ -304,7 +309,11 @@ ${judgeRan
 are truncated to ${PAYLOAD_CHARS} characters &mdash; the sweep database holds them in full.</p>
 ${trajectories(runs, id => eventsByRun.get(id) ?? [])}`;
 
-  fs.writeFileSync(outPath, html, "utf8");
+  // Interpolations that render to nothing leave a line of pure indentation, so the
+  // generated file failed `git diff --check` on 65 lines. Stripped at write time
+  // rather than by hand-tuning every template: a generated artifact that cannot be
+  // committed cleanly is a generated artifact people stop committing.
+  fs.writeFileSync(outPath, html.replace(/[ \t]+$/gm, ""), "utf8");
   console.log(`wrote ${outPath} (${rows.length} variants, ${runs.length} runs)`);
 }
 

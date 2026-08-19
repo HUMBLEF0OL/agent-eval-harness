@@ -5,7 +5,7 @@ import {
   assertFixtureIntact, assertPrefixLongEnough, CACHE_FLOOR, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
   cacheVerdict, classifyRun, loadFixtures, pool, prewarmWithRetry, requireKey, UNSCORED,
 } from "./runner.js";
-import { zeroUsage } from "./cost.js";
+import { PRICES, zeroUsage } from "./cost.js";
 import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
 import { hashGuardedFiles } from "./score/tamper.js";
@@ -220,6 +220,20 @@ describe("PROVIDERS", () => {
     // is a deliberate choice rather than a copy-paste.
     expect(PROVIDERS.openai.cacheMode).toBe("implicit");
     expect(Object.values(PROVIDERS).some(p => p.cacheMode === "explicit")).toBe(false);
+  });
+
+  // Registering an adapter is three edits — PROVIDERS, KEY_ENV, a price row — and a
+  // half-registered vendor fails at different distances: no key row throws at
+  // startup naming `undefined`, no price row throws AFTER the first paid call.
+  // Cheap to assert, and it is the part of vendor-readiness a single-vendor tree
+  // can still hold itself to.
+  it("has a key and at least one priced model for every registered provider", () => {
+    for (const id of Object.keys(PROVIDERS) as Array<keyof typeof PROVIDERS>) {
+      vi.stubEnv("OPENAI_API_KEY", "");
+      expect(() => requireKey(id), `${id} has no KEY_ENV row`).toThrow(/^[A-Z0-9_]+ is not set/);
+      vi.unstubAllEnvs();
+      expect(Object.values(PRICES).some(p => p.provider === id), `${id} has no priced model`).toBe(true);
+    }
   });
 
   it("does not convict OpenAI automatic caching from one ordinary miss", () => {
