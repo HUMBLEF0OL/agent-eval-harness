@@ -114,9 +114,14 @@ describe("report entrypoint", () => {
         "Outcome mix",
         "Trajectory drill-down",
       ]) expect(html, `missing chart: ${heading}`).toContain(heading);
+      expect(html).toContain('class="metric-grid"');
+      expect(html).toContain("Overall pass rate");
+      expect(html).toContain('id="run-search"');
+      expect(html).toContain('id="run-filter"');
+      expect(html).toContain("Expand visible");
       // The drill-down is per run, and it is the trajectory that makes an aggregate
       // checkable rather than something to be taken on trust.
-      expect(html).toContain("<details>");
+      expect(html).toContain('<details class="run"');
       expect(html).toContain("seq");
       // A tracked artifact has to be committable: 65 lines of this file used to fail
       // `git diff --check`, because an interpolation that renders to nothing leaves a
