@@ -44,7 +44,7 @@ Verified locally, on Windows:
   and `npm run verify-fixtures` (27 fixtures, 7 of them controls) were all run green against it.
   This is the strongest available local proxy: it removes line endings as a variable entirely.
   Re-run on Windows after the audit fixes and after the Google adapter was removed (MVP scope:
-  OpenAI only), against the same LF-pinned tree and now six gates: `npm test` **153 tests**
+  OpenAI only), against the same LF-pinned tree and now six gates: `npm test` **176 tests**
   (141 immediately after the removal, which took three adapter test files with it; 184 before
   it), `npm run verify-fixtures`
   **30 fixtures — 23 solvable, 7 controls, and 8 hard-tier naive fixes each required to stay

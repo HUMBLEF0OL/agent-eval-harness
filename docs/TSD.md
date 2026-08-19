@@ -10,6 +10,39 @@
 
 ---
 
+## 0.4 What changed in rev 7
+
+**Statistics moved into the tree.** Every p-value the README published was computed by hand,
+off-tree — the same defect as an un-tracked database, one level up: a number nobody can
+recompute from the repository. `src/stats.ts` (`npm run stats`) now does it: exact binomial sign
+tests over fixture-paired means, bootstrap CIs on the mean delta, every variant pair on every
+metric, and a `--pool` mode for a comparison that spans tiers (rejected outright if a fixture
+appears in two databases, which would count one pair twice). Its test pins the three p-values
+the README had already published — 8/8 at 0.0039, 10/15 at 0.1509, one discordant pair at
+1.000 — so the tool is calibrated against the claims rather than the reverse.
+
+Two deliberate choices in it. Reps collapse to **one mean per fixture** before pairing, so
+running a cell five times buys a better estimate and never a larger n. And the sign-test counters
+are named `higher`/`lower` rather than `wins`/`losses`, because higher is better for `passed` and
+worse for cost, reasoning and steps — a direction word there misreads three metrics out of four.
+
+**The corpus grew from 121 to 413 runs.** Three sweeps recorded 2026-08-19 with reps (3 on the
+easy and control tiers, 5 on the hard tier) are the first designed for power rather than
+coverage, and the first written under the rev-6 schema — so their trajectories are structurally
+unambiguous and their re-run history is a recorded `archived: 0` rather than an unknowable
+absence. `RECORDED` gained a per-file `cheats` count for the same reason it has per-file event
+counts: two judged sweeps found 12 cheats each, on different fixtures for different reasons, and
+one total would hide either drifting into the other.
+
+One operational note worth writing down, because it is not obvious from `--max-live-usd` alone:
+the ledger reserves the **worst case** per request (a full 400k-token context at the model's
+input rate, ~$0.026 on nano) and *quarantines* rather than releases a reservation whose response
+reports zero usage. A cap therefore has to sit well above the expected spend — the three sweeps
+above cost $0.0929, $0.2462 and $0.2033 against caps of $0.40, $0.45 and $0.55. The cap is a
+hard ceiling on authorised exposure, not an estimate of the bill.
+
+---
+
 ## 0.3 What changed in rev 6
 
 Audit of the rev-5 work found that two of its claims were weaker than they read, and one
