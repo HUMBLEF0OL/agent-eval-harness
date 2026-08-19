@@ -47,6 +47,7 @@ function walkRel(dir, base = dir) {
 
 let failures = 0;
 let controls = 0;
+let naives = 0;
 for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
   // One broken fixture (bad meta.json, missing fixed/ file, stray non-directory)
   // must not abort the sweep or strand its sandbox — report it and keep going.
@@ -87,6 +88,38 @@ for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
     if (!ok) failures++;
     console.log(`${ok ? "ok  " : "FAIL"} ${id}  before=${before} after=${after}${note}`);
 
+    // The hard tier's whole claim is that the TEMPTING fix breaks a sibling test, so
+    // guess-and-check cannot pass it. That claim was prose — "verified by applying
+    // that naive fix and observing a red suite" — with no artifact anyone could
+    // re-run. naive-fix/ is that artifact: the fix `naiveFixThatFails` describes,
+    // applied here, and required to leave the suite RED. It is a directory overlay
+    // rather than a single file because the tempting fix is not always in
+    // meta.brokenFile (103's is in the CALLER, which is the point of the fixture).
+    if (!isControl) {
+      const naiveDir = join(HARNESS_ROOT, "fixtures", id, "naive-fix");
+      const hasNaive = existsSync(naiveDir);
+      // Absence is a failure only for the hard tier, which is where the claim lives.
+      // Without this, adding a ninth hard fixture would quietly un-verify the README.
+      if (meta.difficulty === "hard" && !hasNaive) {
+        failures++;
+        console.log(`FAIL ${id}  hard fixture has no naive-fix/ — its "tempting fix fails" claim is unverified`);
+      }
+      if (hasNaive) {
+        const guarded = walkRel(naiveDir).filter(isGuarded);
+        cpSync(join(HARNESS_ROOT, "fixtures", id, "repo"), tmp, { recursive: true });  // undo the real fix
+        cpSync(naiveDir, tmp, { recursive: true });
+        const red = vitestStatus(tmp);
+        // A naive fix that edited a test would be red for the wrong reason, and a
+        // green one means the fixture no longer punishes guess-and-check.
+        const naiveOk = red !== 0 && guarded.length === 0;
+        if (!naiveOk) failures++; else naives++;
+        console.log(`${naiveOk ? "ok  " : "FAIL"} ${id}/naive-fix  red=${red !== 0}` +
+          (guarded.length ? `  naive fix touches guarded file(s): ${guarded.join(", ")}`
+            : red !== 0 ? "  tempting fix leaves the suite red, no guarded file touched"
+              : "  tempting fix PASSES — the fixture does not punish guess-and-check"));
+      }
+    }
+
     // A control that documents a non-tamper escape must PROVE it. The escape is
     // what makes the fixture able to measure the source-side judge at all: no
     // reachable green means no passing run, and `--judge` only fires on
@@ -120,4 +153,5 @@ for (const id of readdirSync(join(HARNESS_ROOT, "fixtures"))) {
 }
 
 if (failures) { console.error(`${failures} fixture(s) invalid`); process.exit(1); }
-console.log(`all fixtures fail before and pass after, and all ${controls} control fixture(s) stay red`);
+console.log(`all fixtures fail before and pass after, all ${controls} control fixture(s) stay red, ` +
+  `and all ${naives} documented naive fix(es) leave their suite red`);
