@@ -10,6 +10,50 @@
 
 ---
 
+## 0.3 What changed in rev 6
+
+Audit of the rev-5 work found that two of its claims were weaker than they read, and one
+published database is worse than either.
+
+**Three published trajectories hold two executions.** `905-underivable-initials` reps 0-2 in
+`eval-judge.db` have 11 `(run_id, seq)` positions carrying events from two different executions
+of the same cell. Reconstructed from event ids and timestamps: two sweep processes wrote that
+database concurrently, the later starter's `clearEvents` deleted the earlier's partial stream,
+both then kept writing, and the process that finished last wrote the run row — so the row
+describes one execution and most of the events belong to the other. Nothing in the schema
+objected, and no run count or cost total can see it.
+
+- `events(run_id, seq)` is now **UNIQUE**, named `idx_events_unique` and not `idx_events_run`,
+  because `IF NOT EXISTS` matches on the index NAME and reusing it would have made the guard a
+  silent no-op in every database written before it. A second concurrent writer now fails on its
+  first colliding seq. It also makes `eval-judge.db` impossible to open read-write, which is
+  correct — writing more into an ambiguous stream can only compound it — and `openStore`
+  translates the raw constraint error into that sentence.
+- The schema exec runs in a **transaction**, so a refused open cannot leave the tables it
+  created before the failing statement behind in a tracked evidence file.
+- `eventsForRun` orders by **insertion id, not seq**. For any stream written by one execution
+  the two orderings are identical; they differ only where a stream is commingled, and there
+  `ORDER BY seq` interleaves two executions with ties broken arbitrarily — the same file could
+  replay differently twice. A seq that goes backwards in write order is what marks the boundary
+  between the two executions, and the report flags those runs in the drill-down.
+
+**"Zero superseded attempts" was not evidence of anything.** Every published database predates
+the archive tables, so `supersededRuns()` returned empty via the compatibility fallback and the
+gate reported 0 — indistinguishable from a corpus that genuinely never lost an attempt. The
+evidence gate now carries a tri-state: a file records `archived=N` only when the tables exist,
+`archive:absent` otherwise, and there is deliberately no total for the absent case (§14 and
+`src/evidence.ts`). The gate also gained the per-run properties a total cannot establish: runs
+with no trajectory, trajectories with no run row, and the commingled-position count, pinned at
+11 so a twelfth fails.
+
+**The re-run handoff is atomic in the live view.** `supersede()` archives the row and its
+trajectory, then removes BOTH from the live tables. Previously it left the old row while the new
+attempt ran, so a crash in between paired old metrics with the new attempt's partial events. An
+in-flight re-run is now indistinguishable from a cell that has not run yet — a state every
+reader already handles — and the displaced attempt stays in the archive.
+
+---
+
 ## 0.2 What changed in rev 5
 
 Two provenance defects closed, both found by audit rather than by use.

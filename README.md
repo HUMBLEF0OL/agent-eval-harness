@@ -294,7 +294,17 @@ comparison is uninformative here.
 ### What all the sweeps establish
 
 **The harness measures correctly.** 121/121 runs scored, costed from real five-category usage,
-and stored with complete replayable trajectories. Restore-before-verify, the per-vendor cache
+and stored with their trajectories — 118 of them unambiguously. **Three are not, and the
+correction matters more than the claim did:** `905-underivable-initials` reps 0-2 in
+`eval-judge.db` hold events from *two* executions of the same cell under one run id, because two
+sweep processes wrote that database at the same time. The later starter's clear wiped the
+earlier's partial stream, then both kept writing, and whichever finished last wrote the run row —
+so for those three the row describes one execution while most of the events belong to the other.
+11 event positions are affected, the report marks all three in the drill-down, `npm run evidence`
+holds the count to exactly 11 so a twelfth anywhere fails the build, and a `UNIQUE (run_id, seq)`
+index now makes a second writer fail loudly instead of interleaving. The run rows, costs and
+verdict totals reconcile regardless; "complete replayable trajectories", as this section said
+before, did not survive contact with the database. Restore-before-verify, the per-vendor cache
 gates, and the error taxonomy all behaved as designed - including under a real quota exhaustion
 during the (since-removed) Gemini run, where errors were recorded as `stop=error` with
 `passed=NULL` so they never counted as model failures. That path is now also exercised by a
@@ -333,25 +343,33 @@ That discipline is the deliverable. Total cost of finding out: **$0.353** across
 databases are tracked — runs, per-run costs, judge verdicts, and all 3,351 trajectory events —
 and `npm run evidence` recomputes the headline from them:
 
-    npm run evidence   # 121 runs, $0.3529, 3351 events, 0 tampered, 12 cheats, 0 superseded
+    npm run evidence   # 121 runs, $0.3529, 3351 events, 0 tampered, 12 cheats, 11 commingled
 
-Every one of those six numbers is recomputed from the databases and every one of them can fail
-the build. The event count is there because "stored with complete replayable trajectories" is a
-claim as much as the cost is, and it is the one the gate used to *print* without checking — 3,351
-events could have drained away a hundred at a time with every other total still reconciling.
+Every one of those numbers is recomputed from the databases and every one can fail the build,
+along with three more the gate checks without printing a headline: runs with no trajectory (0),
+trajectories with no run row (0), and the archive state of each file. The event count is there
+because "trajectories are stored" is a claim as much as the cost is, and it was the one the gate
+*printed* without checking — 3,351 events could have drained away a hundred at a time with every
+other total still reconciling. `11 commingled` is the defect described above, pinned rather than
+excused: a known bad number that the gate holds to its exact value is a fact, and one nobody
+wrote down is a surprise waiting for the next reader.
 
-The last number is the provenance one. Re-running a cell replaces its live row, because the
-metrics want the latest attempt per cell — but the attempt it replaces is **archived**, row and
-full trajectory, into `superseded_runs` / `superseded_events` rather than deleted. So
-`superseded=0` across all six databases is not a description of the schema, it is evidence:
-nothing in the published corpus was ever re-run, and these files are its whole history rather
-than the surviving layer of it. A re-run after publication makes the gate fail until `PUBLISHED`
-is updated to say so, with the displaced attempt readable on disk.
+**What these files cannot tell you: whether a cell was re-run before publication.** A re-run
+now archives the attempt it replaces — row and full trajectory, into `superseded_runs` /
+`superseded_events` — instead of deleting it, so future corpora can answer that question. All
+six of these predate those tables, and a missing table reports "no archived attempts" exactly as
+convincingly as a file that genuinely never lost one. An earlier version of this README read
+that zero as proof the corpus was never re-run; it was not proof, and the gate now prints
+`archive:absent` and refuses to total it. Unknown, not zero — and given the commingled runs
+above, at least one cell demonstrably ran twice.
 
 Reading the evidence cannot change it: `npm run report` and `npm run evidence` open these
 databases **read-only**, because a plain open writes — a journal-mode header, and any table the
-schema has gained since the file was written. Two tests hold that: one checksums a database
-across a `readSweep`, one across a full report build.
+schema has gained since the file was written. Two tests hold that, one checksumming a database
+across a `readSweep` and one across a full report build. The schema exec is also wrapped in a
+transaction, so an open that gets *refused* (which is what now happens if you point a sweep at
+`eval-judge.db`, since the UNIQUE index cannot be built over commingled events) cannot leave
+half a schema behind in the file it just refused.
 
 The per-sweep breakdown and what each sweep was for live in `src/evidence.ts`; open any database
 with `sqlite3`, or regenerate a report from it with
@@ -472,7 +490,8 @@ they will very likely return the same 100%:
 That produces `report.html` — pass rate with a bootstrap 95% CI and tamper rate on one axis,
 cost against pass rate, reasoning tokens against pass rate, the step-count distribution, the
 `stop_reason` mix, and a per-run trajectory drill-down (every LLM call, tool call and result
-with per-turn tokens) — one self-contained file, viewable by opening it, no server required.
+with per-turn tokens, in write order, with any commingled stream flagged where a reader would
+otherwise mistake two executions for one) — one self-contained file, viewable by opening it, no server required.
 
 ### Portability
 
@@ -481,7 +500,8 @@ to LF so a fixture hashes identically on every platform, nothing anywhere spawns
 every path handed to the model or written to the database is forward-slashed. The six
 zero-cost gates run in CI on `ubuntu-latest`, `windows-latest` and `macos-latest` — Node 22
 on all three plus Node 26 on Linux, because `engines` promises `>=22` and an untested promise
-is not one. All green: run 32122510801.
+is not one. All green on the current commit: run 32243660624 (the matrix was introduced at run
+32122510801, and every run since has been green).
 
 What that does **not** cover — musl, arm64, and every live-provider path a keyless gate cannot
 reach — is written down in [docs/PORTABILITY.md](docs/PORTABILITY.md), together with the two

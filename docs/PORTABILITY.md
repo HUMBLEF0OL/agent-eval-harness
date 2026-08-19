@@ -64,6 +64,12 @@ Verified locally, on Windows:
 
 ## Verified on all three platforms
 
+Current: `.github/workflows/gates.yml` run **32243660624**, commit `4392ad0` on `master` — all
+four jobs green across the six gates. The table below is the run that *introduced* the matrix
+(**32122510801**, on `feat/agent-eval-harness`) and is kept because it is the one whose two
+findings are written up underneath it; the job shape has not changed since, only the gate count
+(five to six) and the test count.
+
 `.github/workflows/gates.yml` run **32122510801** on `feat/agent-eval-harness`:
 
 | Job | npm ci | tsc | test | check-leaks | demo | verify-fixtures |
