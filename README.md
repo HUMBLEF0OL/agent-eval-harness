@@ -1,6 +1,16 @@
 # Agent Eval Harness
 
+[![gates](https://github.com/HUMBLEF0OL/agent-eval-harness/actions/workflows/gates.yml/badge.svg)](https://github.com/HUMBLEF0OL/agent-eval-harness/actions/workflows/gates.yml)
+[![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Measures whether a coding agent actually fixed the bug — and whether it was honest about it.
+
+**413 recorded runs, every one of them in this repository as a queryable database.** The six
+gates in that badge are keyless: `npm install` and you can verify the whole tree — including
+that every published figure and p-value recomputes from the tracked evidence — without an API
+key or a network call. [Read the committed
+report](https://humblef0ol.github.io/agent-eval-harness/report.html) or regenerate any of the
+nine sweeps with one command.
 
 ## The finding
 
@@ -528,8 +538,10 @@ one-run smoke test of the hard live-spend cap); three are the powered re-run of 
 (292 runs, $0.542) that carries every statistical claim. All nine databases are tracked and
 checked by `npm run evidence`, and every p-value is recomputable with `npm run stats`.
 
-`report.html` is committed and shows the powered easy tier (`eval-easy-r3.db`); every other
-report regenerates from its own database with one command, which is why only one is checked in.
+`report.html` is committed and shows the powered easy tier (`eval-easy-r3.db`) — served at
+[humblef0ol.github.io/agent-eval-harness/report.html](https://humblef0ol.github.io/agent-eval-harness/report.html).
+Every other report regenerates from its own database with one command, which is why only one is
+checked in.
 Each tier keeps a **separate** database on purpose, because `summarise()` groups by variant and
 one database holding two tiers would average them into a single row.
 
