@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import * as fs from "node:fs";
-import { auditEvidence, PUBLISHED, RECORDED, readSweep, type SweepTotals } from "./evidence.js";
+import {
+  auditEvidence, COMMINGLED_RUNS, PUBLISHED, RECORDED, readSweep, type SweepTotals,
+} from "./evidence.js";
 
 /** A reader that returns exactly what RECORDED claims, so each test can perturb one
  *  number and nothing else. */
@@ -11,7 +13,9 @@ const asRecorded = (db: string): SweepTotals => {
   // the gate now has to reject.
   return {
     runs: s.runs, usd: s.usd, events: s.events,
-    tampered: 0, cheats: db === "eval-judge.db" ? 12 : 0, supersededRuns: 0,
+    tampered: 0, cheats: db === "eval-judge.db" ? 12 : 0,
+    duplicateSeqGroups: s.duplicateSeqGroups, runsWithoutEvents: 0, orphanEventRuns: 0,
+    archived: s.archived,
   };
 };
 
@@ -62,19 +66,72 @@ describe("auditEvidence", () => {
     expect(failures.length).toBe(RECORDED.length + 1);   // one per sweep, plus the total
   });
 
-  // A re-run now ARCHIVES the attempt it replaces, so a non-zero archive means these
-  // files are no longer the whole history of the published corpus.
-  it("catches an attempt that was re-run after publication", () => {
+  // Every published file predates the archive tables, so "no archived attempts" is
+  // the ABSENCE OF A PLACE to record them, not a fact about re-runs. The gate has to
+  // report those two differently — publishing the first as the second was a finding.
+  it("reports an absent archive as unknowable rather than as zero", () => {
+    expect(RECORDED.every(r => r.archived === "absent")).toBe(true);
+    const { lines, failures } = auditEvidence(asRecorded);
+    expect(failures).toEqual([]);
+    expect(lines.join("\n")).toContain("archive:absent");
+    expect(lines.join("\n")).not.toMatch(/archived=0/);
+    expect(lines[lines.length - 1]).toContain(`archive:absent x${RECORDED.length}`);
+  });
+
+  it("catches an archive appearing where the corpus is supposed to have none", () => {
+    // Which is how a tracked database gets upgraded behind your back: something
+    // opened it read-write, and the schema exec created the tables.
     const { failures } = auditEvidence(db =>
-      db === "eval.db" ? { ...asRecorded(db), supersededRuns: 1 } : asRecorded(db));
-    expect(failures.join("\n")).toMatch(/published 0 superseded attempts, evidence holds 1/);
-    expect(failures.join("\n")).toMatch(/no longer the whole history/);
+      db === "eval.db" ? { ...asRecorded(db), archived: 0 } : asRecorded(db));
+    expect(failures.join("\n")).toMatch(/eval\.db: archive state is archived=0 .*archive:absent in RECORDED/);
+  });
+
+  // Commingled trajectories: two executions under one run id. No run count and no
+  // cost total can see this, which is why it is its own published number.
+  it("catches a new commingled trajectory, and holds the known ones to their count", () => {
+    expect(RECORDED.find(r => r.db === "eval-judge.db")!.duplicateSeqGroups).toBe(11);
+    expect(PUBLISHED.duplicateSeqGroups).toBe(11);
+    expect(COMMINGLED_RUNS).toHaveLength(3);
+
+    const { failures } = auditEvidence(db =>
+      db === "eval.db" ? { ...asRecorded(db), duplicateSeqGroups: 1 } : asRecorded(db));
+    expect(failures.join("\n")).toMatch(/eval\.db: commingled positions is 1 in the database, 0/);
+    expect(failures.join("\n")).toMatch(/published 11 commingled event positions, evidence holds 12/);
+  });
+
+  it("catches a twelfth collision inside the file that already has eleven", () => {
+    const { failures } = auditEvidence(db =>
+      db === "eval-judge.db" ? { ...asRecorded(db), duplicateSeqGroups: 12 } : asRecorded(db));
+    expect(failures.join("\n")).toMatch(/eval-judge\.db: commingled positions is 12 in the database, 11/);
+  });
+
+  // The per-run property the previous round left ungated: every published run must
+  // have a trajectory of its own, which an event TOTAL cannot establish.
+  it("catches a run with no trajectory, and a trajectory with no run", () => {
+    const noEvents = auditEvidence(db =>
+      db === "eval-hard.db" ? { ...asRecorded(db), runsWithoutEvents: 2 } : asRecorded(db));
+    expect(noEvents.failures.join("\n")).toMatch(/published 0 runs with no trajectory, evidence holds 2/);
+
+    const orphans = auditEvidence(db =>
+      db === "eval-hard.db" ? { ...asRecorded(db), orphanEventRuns: 1 } : asRecorded(db));
+    expect(orphans.failures.join("\n")).toMatch(/published 0 orphan trajectories, evidence holds 1/);
   });
 
   it("keeps the published totals equal to the sum of the recorded sweeps", () => {
     expect(RECORDED.reduce((a, r) => a + r.runs, 0)).toBe(PUBLISHED.runs);
     expect(RECORDED.reduce((a, r) => a + r.events, 0)).toBe(PUBLISHED.events);
+    expect(RECORDED.reduce((a, r) => a + r.duplicateSeqGroups, 0)).toBe(PUBLISHED.duplicateSeqGroups);
     expect(RECORDED.reduce((a, r) => a + r.usd, 0).toFixed(4)).toBe(PUBLISHED.usd.toFixed(4));
+  });
+
+  // Against the real files, not an injected reader: the numbers RECORDED claims for
+  // the commingled database are what a reader of that database actually finds.
+  it("reads the known integrity state out of the real eval-judge.db", () => {
+    const t = readSweep("eval-judge.db");
+    expect(t.duplicateSeqGroups).toBe(11);
+    expect(t.runsWithoutEvents).toBe(0);
+    expect(t.orphanEventRuns).toBe(0);
+    expect(t.archived).toBe("absent");
   });
 
   // Reading the evidence must not be able to change it. This drives the real

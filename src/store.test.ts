@@ -108,12 +108,14 @@ describe("store", () => {
     expect(store.allRuns().find(r => r.id === "x:y:0")!.passed).toBeNull();
   });
 
-  it("stores events with usage and returns them ordered by seq", () => {
+  it("stores events with usage and returns them in the order they were written", () => {
+    // The runner emits in seq order, so this is also seq order — see the commingled
+    // case below for why the query orders by insertion rather than by seq.
     store.upsertRun(row());
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call", payload: { step: 0 } });
     store.insertEvent("001:baseline:0", { seq: 1, type: "llm_response",
       payload: { stop: "end_turn" }, latencyMs: 900,
       usage: { inputTokens: 1, cacheWriteTokens: 2, cacheReadTokens: 3, outputTokens: 4, reasoningTokens: 5 } });
-    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call", payload: { step: 0 } });
 
     const evs = store.eventsForRun("001:baseline:0");
     expect(evs.map(e => e.seq)).toEqual([0, 1]);
@@ -166,5 +168,64 @@ describe("store", () => {
       expect(r.supersededRuns()).toEqual([]);
       expect(r.supersededEventsForRun("001:baseline:0", 1)).toEqual([]);
     } finally { r.close(); }
+  });
+
+  // The atomicity gap: supersede() archived the old row but LEFT it live, while the
+  // new attempt's row is only written when it finishes. A crash in between paired old
+  // metrics with the new attempt's partial events. Removing both makes an in-flight
+  // re-run indistinguishable from a cell that has not run yet — a state every reader
+  // already handles — with the displaced attempt still readable in the archive.
+  it("leaves no live row while a re-run is in flight", () => {
+    store.upsertRun(row({ passed: 1 }));
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" });
+
+    store.supersede("001:baseline:0");
+    expect(store.allRuns()).toEqual([]);                                  // no stale metrics
+    expect(store.eventsForRun("001:baseline:0")).toEqual([]);
+    expect(store.supersededRuns().map(r => [r.attempt, r.passed])).toEqual([[1, 1]]);
+
+    // The new attempt crashes here: what survives is "never ran", plus the archive.
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" });
+    expect(store.allRuns()).toEqual([]);
+    expect(store.supersededRuns()).toHaveLength(1);
+  });
+
+  // The structural guard for the defect found in eval-judge.db: two sweep processes
+  // wrote one cell into one database at the same time and the schema did not object.
+  it("refuses a second event at a seq the run already has", () => {
+    store.upsertRun(row());
+    store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" });
+    expect(() => store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" }))
+      .toThrow(/UNIQUE constraint failed/);
+    // Same seq under a DIFFERENT run is ordinary — every run starts at 0.
+    store.upsertRun(row({ id: "002:baseline:0" }));
+    expect(() => store.insertEvent("002:baseline:0", { seq: 0, type: "llm_call" })).not.toThrow();
+  });
+
+  it("orders a trajectory by insertion, which stays defined when seq does not", () => {
+    store.upsertRun(row());
+    store.insertEvent("001:baseline:0", { seq: 5, type: "llm_call" });
+    store.insertEvent("001:baseline:0", { seq: 1, type: "llm_response" });
+    store.insertEvent("001:baseline:0", { seq: 9, type: "tool_call" });
+    // Not [1, 5, 9]: ORDER BY seq interleaves two commingled executions with ties
+    // broken arbitrarily, so the replay of a given database has to be its write order.
+    expect(store.eventsForRun("001:baseline:0").map(e => e.seq)).toEqual([5, 1, 9]);
+  });
+
+  describe("integrity", () => {
+    it("reports a clean store as clean", () => {
+      store.upsertRun(row());
+      store.insertEvent("001:baseline:0", { seq: 0, type: "llm_call" });
+      expect(store.integrity()).toEqual({
+        duplicateSeqGroups: 0, runsWithoutEvents: 0, orphanEventRuns: 0,
+        archiveTablesPresent: true,
+      });
+    });
+
+    it("counts a run with no trajectory and a trajectory with no run", () => {
+      store.upsertRun(row());                                   // row, no events
+      store.insertEvent("ghost:baseline:0", { seq: 0, type: "llm_call" });  // events, no row
+      expect(store.integrity()).toMatchObject({ runsWithoutEvents: 1, orphanEventRuns: 1 });
+    });
   });
 });

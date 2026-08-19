@@ -196,9 +196,19 @@ function stopStack(rows: VariantSummary[]): string {
  *  for reading what a run DID, and the sweep database is the full record. */
 const PAYLOAD_CHARS = 400;
 
+/** True when a run's stream holds the same seq twice: two executions of the cell were
+ *  written under one run id. Three published runs are like this, and the drill-down is
+ *  exactly where a reader would otherwise take an interleaved stream for one
+ *  execution. Computed from the events in hand rather than queried, because the
+ *  report already has them. */
+function isCommingled(events: StoredEvent[]): boolean {
+  return new Set(events.map(e => e.seq)).size !== events.length;
+}
+
 function trajectories(runs: RunRow[], eventsFor: (id: string) => StoredEvent[]): string {
   return [...runs].sort((a, b) => a.id.localeCompare(b.id)).map(r => {
-    const rows = eventsFor(r.id).map(e => {
+    const events = eventsFor(r.id);
+    const rows = events.map(e => {
       const tok = [["in", e.inTok], ["cache-r", e.crTok], ["out", e.outTok], ["rsn", e.rsnTok]]
         .filter(([, v]) => v).map(([k, v]) => `${k} ${v}`).join(", ");
       const payload = e.payload ?? "";
@@ -208,7 +218,13 @@ function trajectories(runs: RunRow[], eventsFor: (id: string) => StoredEvent[]):
     }).join("");
     const cheat = r.sourceCheat === null ? ""
       : `  judge=${r.sourceCheat ? `CHEATED (${esc(r.sourceCheatKind ?? "?")})` : "clean"}`;
-    return `<details><summary>${esc(r.id)} &mdash; ${esc(r.stopReason ?? "?")}  passed=${r.passed ?? "NULL"}  tampered=${r.tampered ?? 0}  steps=${r.steps ?? 0}  $${r.costUsd.toFixed(4)}${cheat}</summary>
+    const commingled = isCommingled(events);
+    return `<details><summary>${esc(r.id)} &mdash; ${esc(r.stopReason ?? "?")}  passed=${r.passed ?? "NULL"}  tampered=${r.tampered ?? 0}  steps=${r.steps ?? 0}  $${r.costUsd.toFixed(4)}${cheat}${commingled ? "  &#9888; COMMINGLED" : ""}</summary>
+      ${commingled ? `<p class="note"><strong>Two executions are stored under this run id.</strong>
+        Some seq positions hold events from both, so this is not one unambiguous trajectory.
+        Rows are in write order, and a seq that goes <em>backwards</em> marks where the second
+        execution's events begin. The run row above came from whichever execution finished
+        last, so it may not describe the events you are reading.</p>` : ""}
       ${r.error ? `<p class="note">${esc(r.error)}</p>` : ""}
       ${r.sourceCheatEvidence ? `<p class="note">judge: ${esc(r.sourceCheatEvidence)}</p>` : ""}
       <table class="traj"><tr><th>seq</th><th>type</th><th>name</th><th>tokens</th><th>ms</th><th>payload</th></tr>
@@ -313,7 +329,13 @@ ${trajectories(runs, id => eventsByRun.get(id) ?? [])}`;
   // generated file failed `git diff --check` on 65 lines. Stripped at write time
   // rather than by hand-tuning every template: a generated artifact that cannot be
   // committed cleanly is a generated artifact people stop committing.
-  fs.writeFileSync(outPath, html.replace(/[ \t]+$/gm, ""), "utf8");
+  // Trailing whitespace AND runs of blank lines. An interpolation that renders to
+  // nothing leaves a line of pure indentation behind, and three optional blocks in a
+  // row leave three blank lines in every run's drill-down. Both are cosmetic, both
+  // are in a tracked artifact, and both are cheaper to fix once here than to keep out
+  // of each template by hand.
+  const clean = html.replace(/[ \t]+$/gm, "").replace(/\n{3,}/g, "\n\n");
+  fs.writeFileSync(outPath, clean, "utf8");
   console.log(`wrote ${outPath} (${rows.length} variants, ${runs.length} runs)`);
 }
 

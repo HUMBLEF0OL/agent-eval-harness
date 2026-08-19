@@ -122,6 +122,9 @@ describe("report entrypoint", () => {
       // `git diff --check`, because an interpolation that renders to nothing leaves a
       // line of pure indentation behind.
       expect(html.split(/\r?\n/).filter(l => /[ \t]$/.test(l))).toEqual([]);
+      // Same reason, other half: three optional blocks in a row left three blank
+      // lines in every run's drill-down.
+      expect(html).not.toMatch(/\n\n\n/);
     } finally {
       fs.rmSync(dir, { recursive: true, force: true });
     }
@@ -145,6 +148,35 @@ describe("report entrypoint", () => {
       fs.rmSync(dir, { recursive: true, force: true });
     }
   });
+
+  // Three published trajectories hold two executions of the same cell. The drill-down
+  // is exactly where that would mislead — an interleaved stream reads as one run — so
+  // it is marked, and this drives the real database rather than a constructed one
+  // (the UNIQUE index means a commingled stream can no longer be created through the
+  // store API at all).
+  it("marks a commingled trajectory in the drill-down", () => {
+    const dir = makeSandbox("aeh-report-cm-");
+    try {
+      const out = path.join(dir, "judge.html");
+      buildReport(path.join(HARNESS_ROOT, "eval-judge.db"), out);
+      const html = fs.readFileSync(out, "utf8");
+      expect(html).toContain("COMMINGLED");
+      expect(html).toContain("Two executions are stored under this run id");
+      // Exactly the three known runs, and no others.
+      expect(html.split("COMMINGLED").length - 1).toBe(3);
+      for (const id of ["905-underivable-initials:nano:0", "905-underivable-initials:nano:1",
+                        "905-underivable-initials:nano:2"]) {
+        expect(html).toContain(id);
+      }
+      // And a clean run in the same report is not marked: the three above are the
+      // only <summary> lines carrying the warning.
+      const marked = html.split(/\r?\n/).filter(l => l.includes("COMMINGLED"));
+      expect(marked).toHaveLength(3);
+      expect(marked.every(l => l.includes("905-underivable-initials"))).toBe(true);
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  }, 30_000);
 
   it("refuses a database that does not exist instead of reporting zero runs", () => {
     expect(() => buildReport(path.join(HARNESS_ROOT, "no-such-sweep.db"), "unused.html"))
