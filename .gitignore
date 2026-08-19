@@ -193,3 +193,9 @@ report-*.html
 !eval-judge.db
 !eval-control-final-retry.db
 !eval-budget-smoke.db
+# Recorded 2026-08-19 under the rev-6 schema: UNIQUE (run_id, seq), the re-run archive,
+# read-only reads. These are the first sweeps whose trajectories are structurally
+# unambiguous and whose re-run history is recorded rather than unknowable.
+!eval-easy-r3.db
+!eval-hard-r5.db
+!eval-control-judge-r3.db

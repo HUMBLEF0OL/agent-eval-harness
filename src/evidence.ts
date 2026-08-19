@@ -6,8 +6,10 @@ import { openStore } from "./store.js";
  *  beside this file are the evidence; this table is the CLAIM. They used to be
  *  unrelated: the databases were git-ignored, so a fresh clone could read "121 runs
  *  for $0.353" and had no way to check it — including no way to check the judge
- *  verdicts, the exact costs, or a single trajectory. All six are tracked now, and
- *  `npm run evidence` recomputes the headline from them and fails on any drift.
+ *  verdicts, the exact costs, or a single trajectory. All nine databases are tracked
+ *  now, and `npm run evidence` recomputes the headline from them and fails on any
+ *  drift. Six predate the rev-6 schema; the last three were recorded under it and are
+ *  the ones with reps, i.e. the ones any published p-value comes from.
  *
  *  Costs are compared to four decimals, i.e. to a hundredth of a cent, which is
  *  finer than any figure the README quotes. */
@@ -18,21 +20,36 @@ export interface RecordedSweep {
    *  known defect the gate tolerates has to be a number someone chose — and any
    *  twelfth collision, in any file, then fails. */
   duplicateSeqGroups: number;
+  /** Judged source-side cheats. Zero unless the sweep ran with `--judge`, and a
+   *  per-file number rather than a total: the two judged sweeps found 12 each, on
+   *  different fixtures for different reasons, and one total would hide either one
+   *  drifting into the other. */
+  cheats: number;
   /** Archived re-run attempts, or `"absent"` when the file predates the archive
    *  tables entirely. That distinction IS the finding: a missing table reports zero
    *  archived attempts just as convincingly as a file that was genuinely never
-   *  re-run. All six are `"absent"`, so their re-run history is not recoverable from
-   *  the files, and this gate must never print it as a zero. */
+   *  re-run. Six files here are `"absent"` — their re-run history is not recoverable —
+   *  and three record a real 0. This gate must never print those two the same way. */
   archived: number | "absent";
 }
 
 export const RECORDED: RecordedSweep[] = [
-  { db: "eval.db", what: "easy tier — 15 fixtures x 2 arms (run_tests ablation)", runs: 30, usd: 0.0328, events: 668, duplicateSeqGroups: 0, archived: "absent" },
-  { db: "eval-hard.db", what: "hard tier — 8 fixtures x 4 arms (tools + effort ladder)", runs: 32, usd: 0.0522, events: 812, duplicateSeqGroups: 0, archived: "absent" },
-  { db: "eval-control.db", what: "control tier — the 4 impossible fixtures that existed then", runs: 8, usd: 0.0502, events: 252, duplicateSeqGroups: 0, archived: "absent" },
-  { db: "eval-judge.db", what: "judge sensitivity — 21 fixtures x 2 arms with --judge", runs: 42, usd: 0.1824, events: 1379, duplicateSeqGroups: 11, archived: "absent" },
-  { db: "eval-control-final-retry.db", what: "control retry — 7 controls after the tier grew", runs: 8, usd: 0.0352, events: 236, duplicateSeqGroups: 0, archived: "absent" },
-  { db: "eval-budget-smoke.db", what: "hard live-spend cap, one real capped run", runs: 1, usd: 0.0001, events: 4, duplicateSeqGroups: 0, archived: "absent" },
+  { db: "eval.db", what: "easy tier — 15 fixtures x 2 arms (run_tests ablation)", runs: 30, usd: 0.0328, events: 668, duplicateSeqGroups: 0, cheats: 0, archived: "absent" },
+  { db: "eval-hard.db", what: "hard tier — 8 fixtures x 4 arms (tools + effort ladder)", runs: 32, usd: 0.0522, events: 812, duplicateSeqGroups: 0, cheats: 0, archived: "absent" },
+  { db: "eval-control.db", what: "control tier — the 4 impossible fixtures that existed then", runs: 8, usd: 0.0502, events: 252, duplicateSeqGroups: 0, cheats: 0, archived: "absent" },
+  { db: "eval-judge.db", what: "judge sensitivity — 21 fixtures x 2 arms with --judge", runs: 42, usd: 0.1824, events: 1379, duplicateSeqGroups: 11, cheats: 12, archived: "absent" },
+  { db: "eval-control-final-retry.db", what: "control retry — 7 controls after the tier grew", runs: 8, usd: 0.0352, events: 236, duplicateSeqGroups: 0, cheats: 0, archived: "absent" },
+  { db: "eval-budget-smoke.db", what: "hard live-spend cap, one real capped run", runs: 1, usd: 0.0001, events: 4, duplicateSeqGroups: 0, cheats: 0, archived: "absent" },
+
+  // Recorded 2026-08-19 under the rev-6 schema, and the first sweeps designed for
+  // STATISTICAL POWER rather than coverage: reps per cell, so a fixture contributes a
+  // mean instead of a single observation. They are also the first files whose
+  // trajectories are structurally unambiguous (UNIQUE (run_id, seq)) and whose re-run
+  // history is a recorded 0 rather than an unknowable one — `archived: 0`, not
+  // `"absent"`, is the whole difference between the two halves of this table.
+  { db: "eval-easy-r3.db", what: "easy tier at 3 reps — 15 fixtures x 2 arms, run_tests ablation", runs: 90, usd: 0.0929, events: 2020, duplicateSeqGroups: 0, cheats: 0, archived: 0 },
+  { db: "eval-hard-r5.db", what: "hard tier at 5 reps — 8 fixtures x 4 arms, tools + full effort ladder", runs: 160, usd: 0.2462, events: 4040, duplicateSeqGroups: 0, cheats: 0, archived: 0 },
+  { db: "eval-control-judge-r3.db", what: "control tier at 3 reps with --judge — 7 impossible fixtures x 2 effort arms", runs: 42, usd: 0.2033, events: 1440, duplicateSeqGroups: 0, cheats: 12, archived: 0 },
 ];
 
 /** The three runs whose trajectories are commingled, named so the caveat is greppable
@@ -64,13 +81,14 @@ export const COMMINGLED_RUNS = [
  *  while one position holds two executions (`duplicateSeqGroups`). Only the last is
  *  non-zero, in one file, and pinning it is what makes a twelfth collision a failure.
  *
- *  There is deliberately NO total for archived re-run attempts. Every file here
- *  predates the archive tables, so each reports zero — not because nothing was re-run,
- *  but because there was nowhere to record it. Publishing that zero as proof that the
- *  corpus was never re-run was itself a finding. */
+ *  `archivedAttempts` counts only the files that CAN answer — the three recorded under
+ *  the archive schema. `filesWithoutArchive` counts the six that cannot, and it is a
+ *  published number precisely so the unknowable half stays visible instead of being
+ *  folded into a reassuring zero. That folding was itself a finding. */
 export const PUBLISHED = {
-  runs: 121, usd: 0.3529, events: 3351, tampered: 0, cheats: 12,
+  runs: 413, usd: 0.8953, events: 10851, tampered: 0, cheats: 24,
   duplicateSeqGroups: 11, runsWithoutEvents: 0, orphanEventRuns: 0,
+  archivedAttempts: 0, filesWithoutArchive: 6,
 };
 
 export interface SweepTotals {
@@ -116,6 +134,7 @@ export function auditEvidence(read: (db: string) => SweepTotals = readSweep): {
     duplicateSeqGroups: 0, runsWithoutEvents: 0, orphanEventRuns: 0,
   };
   let unknowableArchives = 0;
+  let archivedAttempts = 0;
 
   for (const sweep of RECORDED) {
     if (!fs.existsSync(sweep.db)) {
@@ -126,6 +145,7 @@ export function auditEvidence(read: (db: string) => SweepTotals = readSweep): {
     for (const [field, got, want] of [
       ["runs", t.runs, sweep.runs], ["events", t.events, sweep.events], ["cost", t.usd, sweep.usd],
       ["commingled positions", t.duplicateSeqGroups, sweep.duplicateSeqGroups],
+      ["judged cheats", t.cheats, sweep.cheats],
     ] as const) {
       const same = field === "cost" ? got.toFixed(4) === (want as number).toFixed(4) : got === want;
       if (!same) failures.push(`${sweep.db}: ${field} is ${got} in the database, ${want} in RECORDED`);
@@ -136,7 +156,7 @@ export function auditEvidence(read: (db: string) => SweepTotals = readSweep): {
       failures.push(`${sweep.db}: archive state is ${archiveLabel(t.archived)} in the database, ` +
         `${archiveLabel(sweep.archived)} in RECORDED`);
     }
-    if (t.archived === "absent") unknowableArchives++;
+    if (t.archived === "absent") unknowableArchives++; else archivedAttempts += t.archived;
 
     lines.push(`  ${sweep.db.padEnd(28)} ${String(t.runs).padStart(3)} runs  ${usd(t.usd).padStart(9)}  ` +
       `${String(t.events).padStart(4)} events  tampered=${t.tampered}  cheats=${t.cheats}  ` +
@@ -149,7 +169,8 @@ export function auditEvidence(read: (db: string) => SweepTotals = readSweep): {
 
   lines.push(`  ${"TOTAL".padEnd(28)} ${String(total.runs).padStart(3)} runs  ${usd(total.usd).padStart(9)}  ` +
     `${String(total.events).padStart(4)} events  tampered=${total.tampered}  cheats=${total.cheats}  ` +
-    `commingled=${total.duplicateSeqGroups}  archive:absent x${unknowableArchives}`);
+    `commingled=${total.duplicateSeqGroups}  archived=${archivedAttempts}  ` +
+    `archive:absent x${unknowableArchives}`);
 
   if (total.runs !== PUBLISHED.runs) failures.push(`published ${PUBLISHED.runs} runs, evidence holds ${total.runs}`);
   if (total.usd.toFixed(4) !== PUBLISHED.usd.toFixed(4)) {
@@ -179,6 +200,15 @@ export function auditEvidence(read: (db: string) => SweepTotals = readSweep): {
     failures.push(`published ${PUBLISHED.orphanEventRuns} orphan trajectories, evidence holds ` +
       `${total.orphanEventRuns} — events whose run row is not in the database`);
   }
+  if (archivedAttempts !== PUBLISHED.archivedAttempts) {
+    failures.push(`published ${PUBLISHED.archivedAttempts} archived attempts across the files that ` +
+      `can record them, evidence holds ${archivedAttempts} — a cell was re-run after publication`);
+  }
+  if (unknowableArchives !== PUBLISHED.filesWithoutArchive) {
+    failures.push(`published ${PUBLISHED.filesWithoutArchive} files whose re-run history is ` +
+      `unknowable, evidence holds ${unknowableArchives} — either an old file was upgraded in place ` +
+      `or a new sweep landed without the archive tables`);
+  }
   return { lines, failures };
 }
 
@@ -198,7 +228,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     console.log(`   Two caveats are part of that claim rather than exceptions to it. ` +
       `${PUBLISHED.duplicateSeqGroups} event positions in eval-judge.db hold two executions of ` +
       `${COMMINGLED_RUNS.length} cells (${COMMINGLED_RUNS.join(", ")}), so those trajectories are ` +
-      `not one unambiguous execution. And every file here predates the re-run archive, so none of ` +
-      `them can say whether a cell was re-run before publication — that is UNKNOWN, not zero.`);
+      `not one unambiguous execution. And ${PUBLISHED.filesWithoutArchive} of the ` +
+      `${RECORDED.length} files predate the re-run archive, so for those the question "was a cell ` +
+      `re-run before publication" is UNKNOWN, not zero. The three newest files answer it: ` +
+      `${PUBLISHED.archivedAttempts} archived attempts, recorded rather than inferred.`);
   }
 }

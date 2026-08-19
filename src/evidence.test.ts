@@ -13,7 +13,7 @@ const asRecorded = (db: string): SweepTotals => {
   // the gate now has to reject.
   return {
     runs: s.runs, usd: s.usd, events: s.events,
-    tampered: 0, cheats: db === "eval-judge.db" ? 12 : 0,
+    tampered: 0, cheats: s.cheats,
     duplicateSeqGroups: s.duplicateSeqGroups, runsWithoutEvents: 0, orphanEventRuns: 0,
     archived: s.archived,
   };
@@ -32,7 +32,10 @@ describe("auditEvidence", () => {
       db === "eval.db" ? { ...asRecorded(db), runs: 29 } : asRecorded(db));
     expect(failures).toHaveLength(2);
     expect(failures.join("\n")).toMatch(/eval\.db: runs is 29/);
-    expect(failures.join("\n")).toMatch(/published 121 runs, evidence holds 120/);
+    // Derived from PUBLISHED, not written out: the corpus grows, and a literal here
+    // just becomes the next stale number an audit finds.
+    expect(failures.join("\n")).toContain(
+      `published ${PUBLISHED.runs} runs, evidence holds ${PUBLISHED.runs - 1}`);
   });
 
   it("catches a cost that drifts by a hundredth of a cent", () => {
@@ -47,7 +50,8 @@ describe("auditEvidence", () => {
     const { failures } = auditEvidence(db =>
       ({ ...asRecorded(db), cheats: 0, tampered: db === "eval.db" ? 1 : 0 }));
     expect(failures.join("\n")).toMatch(/published 0 tampered runs, evidence holds 1/);
-    expect(failures.join("\n")).toMatch(/published 12 judged cheats, evidence holds 0/);
+    expect(failures.join("\n")).toContain(
+      `published ${PUBLISHED.cheats} judged cheats, evidence holds 0`);
   });
 
   // The High finding this closes: 3,351 events were PRINTED but never checked, so a
@@ -56,7 +60,8 @@ describe("auditEvidence", () => {
     const { failures } = auditEvidence(db =>
       db === "eval-judge.db" ? { ...asRecorded(db), events: 1279 } : asRecorded(db));
     expect(failures.join("\n")).toMatch(/eval-judge\.db: events is 1279 in the database, 1379/);
-    expect(failures.join("\n")).toMatch(/published 3351 trajectory events, evidence holds 3251/);
+    expect(failures.join("\n")).toContain(
+      `published ${PUBLISHED.events} trajectory events, evidence holds ${PUBLISHED.events - 100}`);
   });
 
   it("catches a corpus that has silently lost every trajectory", () => {
@@ -70,12 +75,24 @@ describe("auditEvidence", () => {
   // the ABSENCE OF A PLACE to record them, not a fact about re-runs. The gate has to
   // report those two differently — publishing the first as the second was a finding.
   it("reports an absent archive as unknowable rather than as zero", () => {
-    expect(RECORDED.every(r => r.archived === "absent")).toBe(true);
+    const absent = RECORDED.filter(r => r.archived === "absent");
+    expect(absent).toHaveLength(PUBLISHED.filesWithoutArchive);
     const { lines, failures } = auditEvidence(asRecorded);
     expect(failures).toEqual([]);
     expect(lines.join("\n")).toContain("archive:absent");
-    expect(lines.join("\n")).not.toMatch(/archived=0/);
-    expect(lines[lines.length - 1]).toContain(`archive:absent x${RECORDED.length}`);
+    expect(lines[lines.length - 1]).toContain(`archive:absent x${absent.length}`);
+    // And the files that CAN answer are totalled separately, never merged with them.
+    expect(lines[lines.length - 1]).toContain(`archived=${PUBLISHED.archivedAttempts}`);
+  });
+
+  it("catches a re-run in a file that records them, and an old file upgraded in place", () => {
+    const reran = auditEvidence(db =>
+      db === "eval-hard-r5.db" ? { ...asRecorded(db), archived: 1 } : asRecorded(db));
+    expect(reran.failures.join("\n")).toMatch(/published 0 archived attempts.*evidence holds 1/s);
+
+    const upgraded = auditEvidence(db =>
+      db === "eval.db" ? { ...asRecorded(db), archived: 0 } : asRecorded(db));
+    expect(upgraded.failures.join("\n")).toMatch(/unknowable, evidence holds 5/);
   });
 
   it("catches an archive appearing where the corpus is supposed to have none", () => {
@@ -118,6 +135,7 @@ describe("auditEvidence", () => {
   });
 
   it("keeps the published totals equal to the sum of the recorded sweeps", () => {
+    expect(RECORDED.reduce((a, r) => a + r.cheats, 0)).toBe(PUBLISHED.cheats);
     expect(RECORDED.reduce((a, r) => a + r.runs, 0)).toBe(PUBLISHED.runs);
     expect(RECORDED.reduce((a, r) => a + r.events, 0)).toBe(PUBLISHED.events);
     expect(RECORDED.reduce((a, r) => a + r.duplicateSeqGroups, 0)).toBe(PUBLISHED.duplicateSeqGroups);
