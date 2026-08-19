@@ -9,6 +9,8 @@ export interface FakeProvider extends Provider {
   /** Zero-based step index that should throw instead of returning. */
   throwOnStep?: number;
   prewarmUsage: UsageTotals;
+  /** Reply for `complete()` — set it to exercise the cheat judge offline. */
+  completeValue?: unknown;
 }
 
 export function makeFakeProvider(script: ScriptedStep[]): FakeProvider {
@@ -31,7 +33,10 @@ export function makeFakeProvider(script: ScriptedStep[]): FakeProvider {
       };
     },
     async prewarm() { return p.prewarmUsage; },
-    async complete() { throw new Error("not implemented in the fake provider"); },
+    async complete() {
+      if (p.completeValue === undefined) throw new Error("not implemented in the fake provider");
+      return { value: p.completeValue, usage: { ...zeroUsage(), inputTokens: 400, outputTokens: 40 } };
+    },
   };
   return p;
 }

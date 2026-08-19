@@ -3,7 +3,7 @@ import * as path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import {
   assertFixtureIntact, assertPrefixLongEnough, cacheFloor, CACHE_MIN_EVIDENCE, CACHE_WINDOW,
-  cacheVerdict, loadFixtures, pool, prewarmWithRetry, requireKey,
+  cacheVerdict, classifyRun, loadFixtures, pool, prewarmWithRetry, requireKey, UNSCORED,
 } from "./runner.js";
 import { zeroUsage } from "./cost.js";
 import { PROVIDERS } from "./provider/index.js";
@@ -285,5 +285,29 @@ describe("pool", () => {
     const seen: number[] = [];
     await pool([...Array(20).keys()], 4, async (i) => { seen.push(i); });
     expect(seen.sort((a, b) => a - b)).toEqual([...Array(20).keys()]);
+  });
+});
+
+describe("classifyRun", () => {
+  it("records a completed, scored run as itself", () => {
+    expect(classifyRun({ stop: "end_turn" }, { passed: true, error: null }))
+      .toEqual({ stopReason: "end_turn", passed: 1, error: null });
+    expect(classifyRun({ stop: "max_steps" }, { passed: false, error: null }))
+      .toEqual({ stopReason: "max_steps", passed: 0, error: null });
+  });
+
+  it("leaves an unscorable run out of the denominator with its own cause", () => {
+    expect(classifyRun({ stop: "refusal" }, UNSCORED))
+      .toEqual({ stopReason: "refusal", passed: null, error: null });
+    expect(classifyRun({ stop: "error", error: "429 rate limited" }, UNSCORED))
+      .toEqual({ stopReason: "error", passed: null, error: "429 rate limited" });
+  });
+
+  // The regression: a vitest that timed out or failed to spawn was stored as
+  // passed=0 with stop=end_turn — OUR infrastructure failure counted against the
+  // model, in the one column the whole report is read for.
+  it("reclassifies a scorer that never produced a verdict as a harness error", () => {
+    expect(classifyRun({ stop: "end_turn" }, { passed: null, error: "scorer did not complete: boom" }))
+      .toEqual({ stopReason: "error", passed: null, error: "scorer did not complete: boom" });
   });
 });

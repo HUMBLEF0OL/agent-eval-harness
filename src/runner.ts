@@ -6,12 +6,12 @@ import { PROVIDERS } from "./provider/index.js";
 import { makeSandbox } from "./sandbox.js";
 import { judgeSourceCheat } from "./score/judge.js";
 import { diffHashes, hashGuardedFiles } from "./score/tamper.js";
-import { scoreTests } from "./score/tests.js";
+import { scoreTests, type TestVerdict } from "./score/tests.js";
 import { openStore, type RunRow } from "./store.js";
 import { makeTools } from "./tools.js";
 import { VARIANTS, type Variant } from "./variants.js";
 import { JUDGE_MODEL } from "./types.js";
-import type { CacheMode, EventInput, ProviderId, SessionConfig, UsageTotals } from "./types.js";
+import type { CacheMode, EventInput, Provider, ProviderId, SessionConfig, UsageTotals } from "./types.js";
 
 export interface SweepOptions {
   variants: string[];
@@ -27,6 +27,35 @@ export interface SweepOptions {
    *  diff. Off by default — it is an extra billed call on every run and
    *  cannot be exercised without a key. */
   judge: boolean;
+  /** Replaces entries of the provider registry, and only then: an overridden
+   *  provider needs no API key, because it makes no call. This is the seam the
+   *  zero-key demo drives the WHOLE orchestrator through — startup gates, pre-warm,
+   *  store writes, rerun replacement, judge, report — instead of re-composing the
+   *  loop and scorers by hand and calling that end-to-end coverage. Nothing in
+   *  src/cli.ts can set it, so a real sweep cannot accidentally fake a provider. */
+  providers?: Partial<Record<ProviderId, Provider>>;
+}
+
+/** No scorer ran, because the run produced no outcome to score (TSD §12). */
+export const UNSCORED: TestVerdict = { passed: null, error: null };
+
+/** Run outcome + scorer verdict → the three columns the report reads. The whole
+ *  reason this is a named function with its own test: a scorer that never
+ *  completed used to be indistinguishable from a model that failed the tests, so
+ *  harness infrastructure failures landed in the primary metric. `passed` is NULL
+ *  and the stop reason is `error` for those, which puts them out of the pass-rate
+ *  denominator exactly like a refusal or a network failure. */
+export function classifyRun(
+  result: { stop: string; error?: string },
+  verdict: TestVerdict,
+): { stopReason: string; passed: number | null; error: string | null } {
+  return {
+    stopReason: verdict.error ? "error" : result.stop,
+    passed: verdict.passed === null ? null : verdict.passed ? 1 : 0,
+    // A run error is the earlier, more specific cause; a scorer error only exists
+    // when the run itself succeeded, so the two cannot both be set.
+    error: result.error ?? verdict.error,
+  };
 }
 
 // JUDGE_MODEL lives in ./types.js: the report needs it too, and importing it
@@ -264,7 +293,10 @@ export function loadFixtures(filter?: string[]) {
 export async function runSweep(opts: SweepOptions): Promise<void> {
   const fixtures = loadFixtures(opts.tasks);
   if (fixtures.length === 0) throw new Error("no fixtures matched --tasks");
-  if (opts.judge) requireKey("openai");     // the judge always calls OpenAI (JUDGE_MODEL)
+  const registry: Record<ProviderId, Provider> = { ...PROVIDERS, ...opts.providers };
+  /** An overridden provider makes no vendor call, so it needs no key. */
+  const needsKey = (p: ProviderId) => !opts.providers?.[p];
+  if (opts.judge && needsKey("openai")) requireKey("openai");   // the judge calls OpenAI (JUDGE_MODEL)
   const liveBudget = opts.maxLiveUsd === undefined ? undefined : new LiveBudgetLedger(opts.maxLiveUsd);
   if (opts.judge && liveBudget) maxOpenAIRequestCostUsd(JUDGE_MODEL, 2000);
 
@@ -274,12 +306,12 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
   const selected = opts.variants.map(name => {
     const variant = VARIANTS[name];
     if (!variant) throw new Error(`unknown variant: ${name}`);
-    const provider = PROVIDERS[variant.provider];
+    const provider = registry[variant.provider];
     if (!provider) throw new Error(`unknown provider ${variant.provider} in variant ${name}`);
     if (liveBudget && variant.provider !== "openai") {
       throw new Error(`variant ${name}: hard live-budget enforcement currently supports OpenAI only`);
     }
-    requireKey(variant.provider);          // fail before spending an hour
+    if (needsKey(variant.provider)) requireKey(variant.provider);   // fail before spending an hour
     costUsd(variant.model, zeroUsage());   // throws on an unpriced model — before any spend
     if (liveBudget) maxOpenAIRequestCostUsd(variant.model, 16000);
     if (opts.judge && variant.model === JUDGE_MODEL) {
@@ -348,7 +380,13 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
 
           // Scored only when the run produced an outcome (TSD §12).
           const scorable = result.stop !== "refusal" && result.stop !== "error";
-          const passed = scorable ? (await scoreTests(root, fixture.dir) ? 1 : 0) : null;
+          // A scorer that never produced an exit code (vitest timeout, spawn
+          // failure) is OUR failure, not the model's. Folding it in as passed=0
+          // biased the one number the report is read for, so it is reclassified
+          // here into the taxonomy's harness-error row: stop=error, passed=NULL,
+          // out of the denominator, cause preserved in runs.error.
+          const { stopReason, passed, error } = classifyRun(
+            result, scorable ? await scoreTests(root, fixture.dir) : UNSCORED);
 
           // Stretch (TSD §9.3), opt-in only: hash-based tamper detection cannot
           // see a hardcoded/special-cased/mocked fix that still edits real
@@ -370,7 +408,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
                 liveBudget,
               };
               try {
-                const judged = await judgeSourceCheat(PROVIDERS.openai, judgeCfg, diff);
+                const judged = await judgeSourceCheat(registry.openai, judgeCfg, diff);
                 sourceCheat = judged.verdict.cheated ? 1 : 0;
                 sourceCheatKind = judged.verdict.kind;
                 sourceCheatEvidence = judged.verdict.evidence;
@@ -388,7 +426,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             id: runId, taskId: fixture.id, variant: name, provider: variant.provider,
             model: variant.model, effort: variant.effort, rep,
             startedAt, endedAt: new Date().toISOString(),
-            stopReason: result.stop, steps: result.steps,
+            stopReason, steps: result.steps,
             passed, tampered: tamper.tampered ? 1 : 0,
             tamperDetail: tamper.changed.length ? JSON.stringify(tamper.changed) : null,
             sourceCheat, sourceCheatKind, sourceCheatEvidence,
@@ -400,7 +438,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             // Agent spend plus the judge's own billed call (0 unless --judge ran),
             // so the reported cost of a cell is what the cell actually cost.
             costUsd: costUsd(variant.model, result.usage) + judgeUsd,
-            wallMs: Date.now() - t0, error: result.error ?? null,
+            wallMs: Date.now() - t0, error,
           };
           store.upsertRun(row);
 
@@ -415,7 +453,7 @@ export async function runSweep(opts: SweepOptions): Promise<void> {
             if (verdict) throw new Error(`[${name}] ${verdict}`);
           }
 
-          console.log(`  ${runId}  ${result.stop}  passed=${passed}  tampered=${row.tampered}  $${row.costUsd.toFixed(4)}`);
+          console.log(`  ${runId}  ${stopReason}  passed=${passed}  tampered=${row.tampered}  $${row.costUsd.toFixed(4)}`);
         } finally {
           if (!opts.keepTemp) fs.rmSync(root, { recursive: true, force: true });
           else console.log(`  kept ${root}`);
