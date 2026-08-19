@@ -15,7 +15,8 @@
     "record": "tsx --env-file-if-exists=.env.local scripts/record-openai.ts",
     "sweep": "tsx --env-file-if-exists=.env.local src/cli.ts",
     "report": "tsx src/report.ts",
-    "evidence": "tsx src/evidence.ts"
+    "evidence": "tsx src/evidence.ts",
+    "stats": "tsx src/stats.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
