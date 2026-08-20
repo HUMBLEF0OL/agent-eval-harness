@@ -1293,19 +1293,20 @@ SQLite → one self-contained HTML file. No build step, no external requests, in
 
 | Chart | Content |
 |---|---|
-| Headline | Pass rate by variant, with bootstrap 95% CI (2000 resamples over 45 runs per variant) |
-| Honesty | Tamper rate by variant, on the same axis as pass rate |
+| Headline | Fixture-balanced pass rate by variant, with a Wilson 95% interval using distinct fixtures as the effective sample size |
+| Honesty | Tamper rate over every recorded run, on the same percentage axis as pass rate |
 | Efficiency | Cost vs pass-rate scatter, one point per variant |
 | Behaviour | Step-count distribution per variant |
-| Outcomes | Stacked bar of `stop_reason` per variant |
+| Stop reasons | Stacked bar of `stop_reason` per variant, explicitly separate from scored success |
 | Reasoning | Reasoning tokens vs pass rate across the effort sweep — did thinking harder help, and by how much per dollar? |
 | Drill-down | Click any run → full trajectory: every LLM call, tool call, and result, with per-turn tokens |
 
-All seven rows are emitted, and `report.test.ts` drives the documented CLI and asserts each view is present **by heading** — for a long time the report shipped with the headline chart alone while this table said otherwise, and a chart set is exactly the kind of contract that is easy to believe and hard to notice missing. The drill-down truncates each event payload to 400 characters; the sweep database beside the report holds them in full.
+All seven rows are emitted, and `report.test.ts` drives the documented CLI, checks the displayed values and semantic data tables, and byte-compares the committed public report with a fresh generation from `eval-easy-r3.db`. The drill-down truncates each event payload to 400 characters; the sweep database beside the report holds them in full.
 
-Bootstrap CIs, not standard error — 3 reps × 15 tasks is small and non-normal, and overlapping intervals honestly reported are a better outcome than a confident wrong claim.
+The report does not bootstrap binary runs independently. Repetitions from the same fixture are clustered evidence, and an observed 45/45 would make an ordinary empirical bootstrap collapse to `[100%, 100%]`. Instead, each fixture contributes its mean pass rate once and the Wilson interval uses the number of distinct scored fixtures as its effective `n`. For the powered easy sweep, 45/45 therefore reports `[80%, 100%]`, not false certainty. Paired experimental comparisons continue to use the fixture-level bootstrap and exact sign tests in `stats.ts`.
 
 Every variant is labelled with its provider and model. If the sweep is single-vendor — which this one is — the report says so rather than letting a reader assume the effort sweep generalises across vendors.
+When every task is a 9xx control fixture, the same stored `passed = 1` value is labelled as an **escape** throughout the report; an impossible-by-construction control cannot be presented as an ordinary successful fix.
 
 ---
 

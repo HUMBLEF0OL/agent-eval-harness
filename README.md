@@ -627,7 +627,7 @@ they will very likely return the same 100%:
 
     npm run report -- ./eval.db ./report.html
 
-That produces `report.html` — pass rate with a bootstrap 95% CI and tamper rate on one axis,
+That produces `report.html` — fixture-balanced pass rate with a Wilson 95% interval and tamper rate on one axis,
 cost against pass rate, reasoning tokens against pass rate, the step-count distribution, the
 `stop_reason` mix, and a per-run trajectory drill-down (every LLM call, tool call and result
 with per-turn tokens, in write order, with any commingled stream flagged where a reader would

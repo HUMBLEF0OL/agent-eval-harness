@@ -112,7 +112,7 @@ The project is done when all of these hold:
 | S1 | 15 fixtures exist; each fails before the agent runs and passes with the ground-truth patch |
 | S2 | A full sweep (15 tasks × 4 configs × 3 reps = 180 runs) completes unattended |
 | S3 | Every run has a complete, replayable trajectory in SQLite |
-| S4 | Pass rate is reported per variant with bootstrap confidence intervals |
+| S4 | Pass rate is reported per variant with fixture-aware Wilson confidence intervals |
 | S5 | Tamper rate is reported separately from pass rate |
 | S6 | Per-run cost is computed from actual `usage` fields, not estimated |
 | S7 | `npm run demo` exercises the loop, store, and scorers with zero API calls |
