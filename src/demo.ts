@@ -181,9 +181,15 @@ async function scenario(name: string, script: ScriptedStep[]) {
 
   buildReport(db, out);
   const html = fs.readFileSync(out, "utf8");
-  assert.match(html, /1 runs across 1 variants/);
-  assert.match(html, /Source cheat/, "the judge column must appear once the judge has run");
-  assert.match(html, /Trajectory/, "the report must carry the per-run drill-down");
+  // These assert what the SWEEP put in the report — the run it executed, and the judge
+  // verdict it recorded — not how the report words or lays anything out. The report's
+  // own prose, headings and views are report.test.ts's contract, and duplicating them
+  // here is what broke the pipeline: a report rework updated report.test.ts and left
+  // this gate asserting "1 runs across 1 variants" against a page that now says
+  // "1 run / 1 variant". Two places asserting the same layout, one of them updated.
+  assert.match(html, /001-off-by-one:nano:0/, "the swept run must appear in the report");
+  assert.match(html, /judge=clean/, "the judge verdict must reach the report");
+  assert.match(html, /Trajectory drill-down/, "the report must carry the per-run drill-down");
   fs.rmSync(dbDir, { recursive: true, force: true });
   console.log("ok  full sweep: 1 run row, judge verdict, rerun archived + replaced, report written");
 }
